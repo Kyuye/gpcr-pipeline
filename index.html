@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GPCR-iTango-LAUNCHER Pipeline</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>GPCR-<span class="italic">i</span>Tango-LAUNCHER Pipeline</h1>
+      <p class="subtitle">Raw Data &rarr; 분석표 &rarr; 그래프 자동 생성</p>
+    </header>
+
+    <!-- 10-step progress -->
+    <div class="progress-bar">
+      <div class="step active" data-step="0"><span class="step-num">1</span><span class="step-label">업로드</span></div>
+      <div class="step" data-step="1"><span class="step-num">2</span><span class="step-label">데이터 개요</span></div>
+      <div class="step" data-step="2"><span class="step-num">3</span><span class="step-label">플랫폼</span></div>
+      <div class="step" data-step="3"><span class="step-num">4</span><span class="step-label">조건/농도</span></div>
+      <div class="step" data-step="4"><span class="step-num">5</span><span class="step-label">셀 범위</span></div>
+      <div class="step" data-step="5"><span class="step-num">6</span><span class="step-label">Replicate</span></div>
+      <div class="step" data-step="6"><span class="step-num">7</span><span class="step-label">표 확인</span></div>
+      <div class="step" data-step="7"><span class="step-num">8</span><span class="step-label">시각화</span></div>
+      <div class="step" data-step="8"><span class="step-num">9</span><span class="step-label">그래프</span></div>
+      <div class="step" data-step="9"><span class="step-num">10</span><span class="step-label">다운로드</span></div>
+    </div>
+
+    <main class="wizard-content">
+
+      <!-- Step 0: Upload -->
+      <section class="wizard-step active" id="step-0">
+        <div class="step-card">
+          <h2>Raw Data 엑셀 업로드</h2>
+          <p>실험 raw data가 포함된 엑셀 파일(.xlsx, .xls)을 업로드해주세요.</p>
+          <div class="upload-area" id="upload-area">
+            <div class="upload-icon">📂</div>
+            <p>파일을 드래그하거나 클릭하여 업로드</p>
+            <input type="file" id="file-input" accept=".xlsx,.xls" hidden>
+          </div>
+          <div id="file-info" class="file-info hidden">
+            <span class="file-name"></span>
+            <span class="file-sheets"></span>
+          </div>
+          <div id="sheet-preview" class="sheet-preview hidden">
+            <h3>시트 미리보기</h3>
+            <div class="sheet-tabs" id="sheet-tabs"></div>
+            <div class="preview-table-wrapper"><table id="preview-table" class="data-table"></table></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 1: Q1 -->
+      <section class="wizard-step" id="step-1">
+        <div class="step-card">
+          <h2>Q1. 데이터 개요 확인</h2>
+          <p class="question">이 데이터는 어떤 실험 데이터인가요?</p>
+          <p class="hint">예: 260402 Adrenaline receptor 비교 실험</p>
+          <input type="text" id="q1-answer" class="text-input" placeholder="실험 날짜, receptor 계열, 목적 등을 입력하세요">
+        </div>
+      </section>
+
+      <!-- Step 2: Q2 (+ 기타) -->
+      <section class="wizard-step" id="step-2">
+        <div class="step-card">
+          <h2>Q2. LNC 플랫폼 확인</h2>
+          <p class="question">이 실험은 어떤 플랫폼을 대상으로 했나요?</p>
+          <div class="radio-group">
+            <label class="radio-card"><input type="radio" name="platform" value="LNC1.0"><div class="radio-content"><strong>LNC 1.0 만</strong><span>DoubleiLID</span></div></label>
+            <label class="radio-card"><input type="radio" name="platform" value="LNC2.0"><div class="radio-content"><strong>LNC 2.0 만</strong><span>singleiLID</span></div></label>
+            <label class="radio-card"><input type="radio" name="platform" value="both"><div class="radio-content"><strong>LNC 1.0 + 2.0 모두</strong><span>비교 실험</span></div></label>
+            <label class="radio-card"><input type="radio" name="platform" value="custom"><div class="radio-content"><strong>기타</strong><span>직접 입력</span></div></label>
+          </div>
+          <div id="platform-custom" class="condition-fields hidden">
+            <div class="field-row">
+              <label>플랫폼 이름:</label>
+              <input type="text" id="platform-custom-name" class="text-input short" placeholder="예: LNC3.0, LAUNCHER-X 등">
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 3: Q3 (+ 기타) -->
+      <section class="wizard-step" id="step-3">
+        <div class="step-card">
+          <h2>Q3. 실험 조건 및 농도 확인</h2>
+          <p class="question">실험 조건이 어떻게 구성되어 있나요?</p>
+          <div class="radio-group vertical">
+            <label class="radio-card"><input type="radio" name="condition-type" value="A"><div class="radio-content"><strong>A. control + antagonist + agonist 딱 3개</strong></div></label>
+            <label class="radio-card"><input type="radio" name="condition-type" value="B"><div class="radio-content"><strong>B. antagonist 또는 agonist가 농도별로 여러 개</strong></div></label>
+            <label class="radio-card"><input type="radio" name="condition-type" value="C"><div class="radio-content"><strong>C. antagonist만 또는 agonist만 실험</strong></div></label>
+            <label class="radio-card"><input type="radio" name="condition-type" value="D"><div class="radio-content"><strong>D. 기타 (직접 입력)</strong></div></label>
+          </div>
+          <div id="cond-A" class="condition-fields hidden">
+            <div class="field-row"><label>Antagonist 농도:</label><input type="text" id="atg-conc" class="text-input short" placeholder="예: 10μM"></div>
+            <div class="field-row"><label>Agonist 농도:</label><input type="text" id="ag-conc" class="text-input short" placeholder="예: 10μM"></div>
+          </div>
+          <div id="cond-B" class="condition-fields hidden">
+            <div class="field-row"><label>Antagonist 농도들:</label><input type="text" id="atg-concs" class="text-input" placeholder="예: 1μM, 10μM, 100μM (쉼표 구분)"></div>
+            <div class="field-row"><label>Agonist 농도들:</label><input type="text" id="ag-concs" class="text-input" placeholder="예: 10μM (쉼표 구분)"></div>
+          </div>
+          <div id="cond-C" class="condition-fields hidden">
+            <div class="field-row"><label>실험 유형:</label><select id="c-type" class="select-input"><option value="">선택</option><option value="antagonist">Antagonist만</option><option value="agonist">Agonist만</option></select></div>
+            <div class="field-row"><label>농도:</label><input type="text" id="c-conc" class="text-input short" placeholder="예: 10μM"></div>
+          </div>
+          <div id="cond-D" class="condition-fields hidden">
+            <p class="hint">조건명을 쉼표로 구분하여 입력하세요. 첫 번째는 control로 간주합니다.</p>
+            <div class="field-row"><label>조건 목록:</label><input type="text" id="d-conditions" class="text-input" placeholder="예: control, drug-A(10μM), drug-B(5μM)"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 4: Receptor + Cell Range (drag select) -->
+      <section class="wizard-step" id="step-4">
+        <div class="step-card">
+          <h2>Q4-Q5. Receptor 및 셀 범위 지정</h2>
+          <p class="question">Receptor를 추가하고, 아래 엑셀 표에서 셀을 <strong>드래그</strong>하여 범위를 지정하세요.</p>
+          <div class="receptor-add-section">
+            <button class="btn btn-outline" id="add-receptor-btn">+ Receptor 추가</button>
+          </div>
+          <div id="receptor-list"></div>
+
+          <!-- Modal -->
+          <div id="receptor-modal" class="modal hidden">
+            <div class="modal-content modal-wide">
+              <div class="modal-header-row">
+                <h3 id="modal-title">Receptor 추가</h3>
+                <button class="btn-close" id="modal-close-x">&times;</button>
+              </div>
+              <div class="field-row" id="receptor-select-row" style="margin-bottom:12px;">
+                <label>Receptor:</label>
+                <select id="receptor-name-select" class="select-input">
+                  <option value="">선택하세요</option>
+                  <optgroup label="Acetylcholine"><option value="CHRM1">CHRM1</option><option value="CHRM2">CHRM2</option><option value="CHRM3">CHRM3</option><option value="CHRM4">CHRM4</option><option value="CHRM5">CHRM5</option></optgroup>
+                  <optgroup label="Histamine"><option value="HRH1">HRH1</option><option value="HRH2">HRH2</option><option value="HRH3">HRH3</option><option value="HRH4">HRH4</option></optgroup>
+                  <optgroup label="Adenosine"><option value="ADORA1">ADORA1</option><option value="ADORA2A">ADORA2A</option><option value="ADORA2B">ADORA2B</option><option value="ADORA3">ADORA3</option></optgroup>
+                  <optgroup label="Serotonin"><option value="HTR1A">HTR1A</option><option value="HTR2A">HTR2A</option><option value="HTR2C">HTR2C</option><option value="HTR4">HTR4</option></optgroup>
+                  <optgroup label="Adrenaline"><option value="ADRA1B">ADRA1B</option><option value="ADRA2B">ADRA2B</option><option value="ADRA2C">ADRA2C</option><option value="ADRB2">ADRB2</option></optgroup>
+                  <optgroup label="Dopamine"><option value="DRD2">DRD2</option></optgroup>
+                  <optgroup label="Others"><option value="Oxytocin">Oxytocin</option><option value="PACAP">PACAP (ADCYAP1)</option></optgroup>
+                </select>
+              </div>
+              <div id="selection-target-bar" class="selection-target-bar">아래 슬롯을 클릭한 뒤, 표에서 셀을 드래그하세요</div>
+              <div class="modal-body-split">
+                <div class="modal-table-side">
+                  <div class="sheet-tabs" id="modal-sheet-tabs"></div>
+                  <div class="selectable-table-wrapper" id="selectable-table-wrapper">
+                    <table id="modal-preview-table" class="data-table selectable-table"></table>
+                  </div>
+                </div>
+                <div class="modal-slots-side" id="modal-slots-side"></div>
+              </div>
+              <div class="modal-actions">
+                <button class="btn btn-secondary" id="modal-cancel">취소</button>
+                <button class="btn btn-primary" id="modal-confirm">추가</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 5: Replicate -->
+      <section class="wizard-step" id="step-5">
+        <div class="step-card">
+          <h2>Q6. Replicate 방식 확인</h2>
+          <p class="question">데이터에 replicate이 있나요?</p>
+          <div class="radio-group vertical">
+            <label class="radio-card"><input type="radio" name="replicate" value="yes"><div class="radio-content"><strong>2개 replicate가 있음</strong><span>두 값의 평균을 계산합니다</span></div></label>
+            <label class="radio-card"><input type="radio" name="replicate" value="no"><div class="radio-content"><strong>Replicate 없이 1개 값만 사용</strong><span>입력된 값을 그대로 사용합니다</span></div></label>
+          </div>
+          <div id="replicate-info" class="hidden">
+            <p class="hint" style="margin-top:12px;">각 receptor의 두 번째 replicate 범위를 드래그하여 지정하세요.</p>
+            <div id="replicate-ranges"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 6: Table confirm -->
+      <section class="wizard-step" id="step-6">
+        <div class="step-card">
+          <h2>Q7. 표1 확인</h2>
+          <p class="question">아래 분석 데이터가 맞는지 확인해주세요. DARK/BLUE 셀을 클릭하면 값을 수정할 수 있습니다.</p>
+          <div class="table-wrapper"><h3>표1: 분석 데이터 (Full Precision)</h3><table id="table1" class="data-table analysis-table"></table></div>
+          <div class="table-wrapper" style="margin-top:20px;"><h3>표2: 소수점 2자리 반올림</h3><table id="table2" class="data-table analysis-table"></table></div>
+        </div>
+      </section>
+
+      <!-- Step 7: Visualization mode (NEW) -->
+      <section class="wizard-step" id="step-7">
+        <div class="step-card">
+          <h2>Q9. 시각화 모드 선택</h2>
+          <p class="question">그래프를 어떻게 그릴까요?</p>
+          <div class="radio-group vertical">
+            <label class="radio-card">
+              <input type="radio" name="viz-mode" value="A">
+              <div class="radio-content">
+                <strong>A) 모든 GPCR 23개 전체 나타내기</strong>
+                <span>4열 x 6행, A4 세로 전체 — GPCR_individual_replicates.xlsx 필요</span>
+              </div>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="viz-mode" value="B">
+              <div class="radio-content">
+                <strong>B) 이번에 추가된 GPCR만 나타내기</strong>
+                <span>해당 receptor만 포함, 패널 수에 맞게 자동 배치</span>
+              </div>
+            </label>
+          </div>
+          <div id="viz-mode-a-info" class="hidden" style="margin-top:16px;">
+            <div class="upload-area" id="master-upload-area" style="padding:24px;">
+              <div class="upload-icon" style="font-size:28px;">📁</div>
+              <p style="font-size:13px;">GPCR_individual_replicates.xlsx 업로드</p>
+              <input type="file" id="master-file-input" accept=".xlsx,.xls" hidden>
+            </div>
+            <div id="master-file-info" class="file-info hidden" style="margin-top:8px;">
+              <span class="master-file-name"></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Step 8: Graph preview -->
+      <section class="wizard-step" id="step-8">
+        <div class="step-card">
+          <h2>그래프 미리보기</h2>
+          <p>표1 데이터를 기반으로 생성된 SVG 그래프입니다.</p>
+          <div class="graph-preview" id="graph-preview"></div>
+        </div>
+      </section>
+
+      <!-- Step 9: Download -->
+      <section class="wizard-step" id="step-9">
+        <div class="step-card">
+          <h2>결과물 다운로드</h2>
+          <p>모든 분석이 완료되었습니다.</p>
+          <div class="download-grid">
+            <div class="download-card"><div class="dl-icon">📊</div><h3>SVG 그래프</h3><p>Bar Chart</p><button class="btn btn-primary" id="btn-download-svg">다운로드</button></div>
+            <div class="download-card"><div class="dl-icon">📋</div><h3>엑셀 파일</h3><p>Raw Data + 표1 + 표2</p><button class="btn btn-primary" id="btn-download-excel">다운로드</button></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <div class="wizard-nav">
+      <button class="btn btn-secondary" id="btn-prev" disabled>&larr; 이전</button>
+      <button class="btn btn-primary" id="btn-next">다음 &rarr;</button>
+    </div>
+  </div>
+
+  <script src="chart.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
