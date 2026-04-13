@@ -250,6 +250,35 @@
             <div class="download-card"><div class="dl-icon">📊</div><h3>SVG 그래프</h3><p>Bar Chart</p><button class="btn btn-primary" id="btn-download-svg">다운로드</button></div>
             <div class="download-card"><div class="dl-icon">📋</div><h3>엑셀 파일</h3><p>Raw + 표1 + 표2</p><button class="btn btn-primary" id="btn-download-excel">다운로드</button></div>
           </div>
+
+          <!-- 2차: 마스터 파일 업데이트 -->
+          <div style="margin-top:32px;padding-top:24px;border-top:2px solid #e5e7eb;">
+            <h3 style="font-size:16px;margin-bottom:4px;">2차: 마스터 파일 업데이트 (선택)</h3>
+            <p class="hint">기존 마스터 파일을 업로드하면 이번 실험 데이터를 추가하여 다운로드할 수 있습니다.</p>
+            <div class="download-grid" style="grid-template-columns:1fr 1fr 1fr;margin-top:12px;">
+              <div class="download-card" style="padding:16px;">
+                <h3 style="font-size:13px;">individual_replicates</h3>
+                <p style="font-size:11px;">GPCR_individual_replicates.xlsx</p>
+                <label class="btn btn-outline" style="padding:6px 12px;font-size:12px;display:inline-block;cursor:pointer;">업로드<input type="file" id="master-rep-input" accept=".xlsx,.xls" hidden></label>
+                <span id="master-rep-status" style="font-size:11px;color:#059669;display:block;margin-top:4px;"></span>
+                <button class="btn btn-primary" id="btn-update-rep" style="margin-top:8px;padding:6px 12px;font-size:12px;" disabled>업데이트 다운로드</button>
+              </div>
+              <div class="download-card" style="padding:16px;">
+                <h3 style="font-size:13px;">analysis</h3>
+                <p style="font-size:11px;">GPCR_analysis.xlsx</p>
+                <label class="btn btn-outline" style="padding:6px 12px;font-size:12px;display:inline-block;cursor:pointer;">업로드<input type="file" id="master-analysis-input" accept=".xlsx,.xls" hidden></label>
+                <span id="master-analysis-status" style="font-size:11px;color:#059669;display:block;margin-top:4px;"></span>
+                <button class="btn btn-primary" id="btn-update-analysis" style="margin-top:8px;padding:6px 12px;font-size:12px;" disabled>업데이트 다운로드</button>
+              </div>
+              <div class="download-card" style="padding:16px;">
+                <h3 style="font-size:13px;">ANOVA_results</h3>
+                <p style="font-size:11px;">GPCR_ANOVA_results.xlsx</p>
+                <label class="btn btn-outline" style="padding:6px 12px;font-size:12px;display:inline-block;cursor:pointer;">업로드<input type="file" id="master-anova-input" accept=".xlsx,.xls" hidden></label>
+                <span id="master-anova-status" style="font-size:11px;color:#059669;display:block;margin-top:4px;"></span>
+                <button class="btn btn-primary" id="btn-update-anova" style="margin-top:8px;padding:6px 12px;font-size:12px;" disabled>업데이트 다운로드</button>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
