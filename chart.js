@@ -18,9 +18,9 @@ function generateSVG(tableData, vizMode, ctrlMode) {
   const W = 210, ML = 7, MR = 7, MT = 9, MB = 3, GAP = 3.5, COLS = 4;
   const includeCtrl = (ctrlMode === 'include');
 
-  // Data map
-  const dataMap = {};
-  tableData.forEach(d => { if (!dataMap[d.receptor]) dataMap[d.receptor] = {}; dataMap[d.receptor][d.platform] = d; });
+  // Data map + label map
+  const dataMap = {}, labelMap = {};
+  tableData.forEach(d => { if (!dataMap[d.receptor]) dataMap[d.receptor] = {}; dataMap[d.receptor][d.platform] = d; labelMap[d.receptor] = d.graphLabel || d.receptor; });
 
   // Panel list
   let panelList;
@@ -47,7 +47,7 @@ function generateSVG(tableData, vizMode, ctrlMode) {
       const idx = row * COLS + col;
       const gpcr = panelList[idx];
       if (!gpcr) continue;
-      svg += renderPanel(gpcr, dataMap[gpcr], ML + col * (pw + GAP), MT + row * (ph + GAP), pw, ph, includeCtrl);
+      svg += renderPanel(gpcr, dataMap[gpcr], ML + col * (pw + GAP), MT + row * (ph + GAP), pw, ph, includeCtrl, labelMap[gpcr]);
     }
   }
   svg += '</svg>';
@@ -67,7 +67,7 @@ function renderLegend(W) {
 }
 
 /* ── Panel ───────────────────────────────────────────────── */
-function renderPanel(gpcr, recData, ox, oy, pw, ph, includeCtrl) {
+function renderPanel(gpcr, recData, ox, oy, pw, ph, includeCtrl, graphLabel) {
   let s = '';
   const pl = ox + 5.8, pr = ox + pw - 0.6;
   const pt = oy + 1.0, pb = oy + ph - 10.0;
@@ -247,11 +247,35 @@ function renderPanel(gpcr, recData, ox, oy, pw, ph, includeCtrl) {
   const recY = lncY + 3.6;
   const recL = pl + step * 0.05, recR = pr - step * 0.05;
   s += bracketDown(recL, recR, recY - 0.5, 0.5);
-  const dn = DISPLAY_NAME[gpcr] || gpcr;
-  s += `<text x="${(recL+recR)/2}" y="${recY+2.0}" font-size="1.411" fill="#333" text-anchor="middle">${dn}-<tspan font-style="italic">i</tspan>Tango-</text>`;
-  s += `<text x="${(recL+recR)/2}" y="${recY+3.5}" font-size="1.411" fill="#333" text-anchor="middle">LAUNCHER</text>`;
+  // Dynamic label from graphLabel (e.g. "CHRM1-iTango-LAUNCHER", "Target-LAUNCHER", "PromoterA")
+  const fullLabel = graphLabel || (DISPLAY_NAME[gpcr] || gpcr);
+  const labelParts = splitLabel(fullLabel);
+  s += `<text x="${(recL+recR)/2}" y="${recY+2.0}" font-size="1.411" fill="#333" text-anchor="middle">${labelParts.line1}</text>`;
+  if (labelParts.line2) s += `<text x="${(recL+recR)/2}" y="${recY+3.5}" font-size="1.411" fill="#333" text-anchor="middle">${labelParts.line2}</text>`;
 
   return s;
+}
+
+function splitLabel(label) {
+  // "CHRM1-iTango-LAUNCHER" → line1: "CHRM1-iTango-", line2: "LAUNCHER"
+  // "Target-LAUNCHER" → line1: "Target-", line2: "LAUNCHER"
+  // "PromoterA" → line1: "PromoterA", line2: null
+  if (label.includes('-iTango-')) {
+    const i = label.indexOf('-iTango-');
+    const name = label.substring(0, i);
+    const rest = label.substring(i + 8); // after "-iTango-"
+    return { line1: `${name}-<tspan font-style="italic">i</tspan>Tango-`, line2: rest };
+  }
+  if (label.includes('-LAUNCHER')) {
+    const i = label.indexOf('-LAUNCHER');
+    return { line1: label.substring(0, i) + '-', line2: 'LAUNCHER' };
+  }
+  if (label.length > 15) {
+    const mid = Math.ceil(label.length / 2);
+    const sp = label.indexOf('-', mid - 5);
+    if (sp > 0) return { line1: label.substring(0, sp + 1), line2: label.substring(sp + 1) };
+  }
+  return { line1: label, line2: null };
 }
 
 function bracketDown(x1, x2, y, h) {

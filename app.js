@@ -12,6 +12,7 @@ const state = {
   expType: '',           // 'opto' | 'non-opto'
   optoSystem: '',        // 'gpcr' | 'launcher' | 'opto-custom'
   optoCustomName: '',
+  targetType: '',        // 'gpcr-list' | 'custom-target'
 
   q1Description: '',
   q2Platform: '', q2CustomPlatform: '',
@@ -76,8 +77,11 @@ function validateStep(n){
     case 1: {
       const r=document.querySelector('input[name="exp-type"]:checked');if(!r)return false;state.expType=r.value;
       if(r.value==='opto'){const s=document.querySelector('input[name="opto-system"]:checked');if(!s)return false;state.optoSystem=s.value;
-        if(s.value==='opto-custom'){state.optoCustomName=document.getElementById('opto-custom-name').value.trim();return!!state.optoCustomName;}
-      }return true;
+        if(s.value==='opto-custom'){state.optoCustomName=document.getElementById('opto-custom-name').value.trim();if(!state.optoCustomName)return false;}
+      }
+      // Q0-2 target type
+      const tt=document.querySelector('input[name="target-type"]:checked');if(!tt)return false;state.targetType=tt.value;
+      return true;
     }
     case 2: state.q1Description=document.getElementById('q1-answer').value.trim();return!!state.q1Description;
     case 3: {const r=document.querySelector('input[name="platform"]:checked');if(!r)return false;state.q2Platform=r.value;if(r.value==='custom'){state.q2CustomPlatform=document.getElementById('platform-custom-name').value.trim();return!!state.q2CustomPlatform;}return true;}
@@ -102,8 +106,33 @@ $btnNext.addEventListener('click',()=>{if(!validateStep(state.currentStep)){aler
 $btnPrev.addEventListener('click',()=>goToStep(state.currentStep-1));
 
 /* ── Q0 toggles ──────────────────────────────────────────── */
-document.querySelectorAll('input[name="exp-type"]').forEach(r=>r.addEventListener('change',()=>{document.getElementById('opto-subtype').classList.toggle('hidden',r.value!=='opto');}));
-document.querySelectorAll('input[name="opto-system"]').forEach(r=>r.addEventListener('change',()=>{document.getElementById('opto-custom-field').classList.toggle('hidden',r.value!=='opto-custom');}));
+document.querySelectorAll('input[name="exp-type"]').forEach(r=>r.addEventListener('change',()=>{
+  document.getElementById('opto-subtype').classList.toggle('hidden',r.value!=='opto');
+  document.getElementById('target-type-section').classList.remove('hidden'); // always show Q0-2
+  updateLabelPreview();
+}));
+document.querySelectorAll('input[name="opto-system"]').forEach(r=>r.addEventListener('change',()=>{document.getElementById('opto-custom-field').classList.toggle('hidden',r.value!=='opto-custom');updateLabelPreview();}));
+document.querySelectorAll('input[name="target-type"]').forEach(r=>r.addEventListener('change',()=>{updateLabelPreview();}));
+
+function getGraphLabel(targetName){
+  const et=state.expType||document.querySelector('input[name="exp-type"]:checked')?.value||'opto';
+  const os=state.optoSystem||document.querySelector('input[name="opto-system"]:checked')?.value||'gpcr';
+  const ocn=state.optoCustomName||document.getElementById('opto-custom-name')?.value?.trim()||'System';
+  if(et==='non-opto') return targetName;
+  if(os==='gpcr') return `${targetName}-iTango-LAUNCHER`;
+  if(os==='launcher') return `${targetName}-LAUNCHER`;
+  return `${targetName}-${ocn}`;
+}
+
+function updateLabelPreview(){
+  const tt=document.querySelector('input[name="target-type"]:checked')?.value;
+  const preview=document.getElementById('target-label-preview');
+  const previewText=document.getElementById('label-preview-text');
+  if(!tt){preview.classList.add('hidden');return;}
+  preview.classList.remove('hidden');
+  const exName=tt==='gpcr-list'?'CHRM1':'TargetName';
+  previewText.textContent=getGraphLabel(exName);
+}
 
 /* ── Q2 custom ───────────────────────────────────────────── */
 document.querySelectorAll('input[name="platform"]').forEach(r=>r.addEventListener('change',()=>{document.getElementById('platform-custom').classList.toggle('hidden',r.value!=='custom');}));
@@ -143,7 +172,17 @@ function openRepModal(idx){const rec=state.receptors[idx];const slots=[];const l
 const $modal=document.getElementById('receptor-modal'),$targetBar=document.getElementById('selection-target-bar'),$slotsContainer=document.getElementById('modal-slots-side');
 let currentModalSlots=[],modalConfirmCallback=null;
 function openModalForSlots(slots,title,onConfirm,showRecSel=true){currentModalSlots=slots;modalConfirmCallback=onConfirm;document.getElementById('modal-title').textContent=title;document.getElementById('receptor-select-row').style.display=showRecSel?'':'none';state.activeSlotKey=null;state.modalActiveSheet=state.sheetNames[0];$modal.classList.remove('hidden');renderSheetTabs('modal-sheet-tabs','modal-preview-table',true);renderSheetTable(state.sheetNames[0],'modal-preview-table',true);renderSlots();updateTargetBar();attachDragHandlers();const fe=currentModalSlots.findIndex(s=>!s.range);if(fe>=0)activateSlot(fe);}
-document.getElementById('add-receptor-btn').addEventListener('click',()=>{readQ3Values();document.getElementById('receptor-name-select').value='';const slots=[];const lights=isOpto()?['dark','blue']:['seap'];getPlatforms().forEach(plat=>{getConditionLabels().forEach(cond=>{lights.forEach(light=>{slots.push({plat,cond,light,range:'',vals:[]});});});});openModalForSlots(slots,'Receptor 추가',()=>{const name=document.getElementById('receptor-name-select').value;if(!name){alert('Receptor를 선택해주세요.');return false;}const entry={name,ranges:{}};currentModalSlots.forEach(s=>{if(!entry.ranges[s.plat])entry.ranges[s.plat]={};if(!entry.ranges[s.plat][s.cond])entry.ranges[s.plat][s.cond]={};entry.ranges[s.plat][s.cond][s.light]={range:s.range,vals:s.vals};});state.receptors.push(entry);renderReceptorList();return true;},true);});
+document.getElementById('add-receptor-btn').addEventListener('click',()=>{readQ3Values();
+  // Toggle receptor select vs custom input based on targetType
+  const isCustomTarget=state.targetType==='custom-target';
+  document.getElementById('receptor-name-select').classList.toggle('hidden',isCustomTarget);
+  document.getElementById('receptor-custom-input').classList.toggle('hidden',!isCustomTarget);
+  if(isCustomTarget) document.getElementById('receptor-custom-input').value='';
+  else document.getElementById('receptor-name-select').value='';
+  const slots=[];const lights=isOpto()?['dark','blue']:['seap'];getPlatforms().forEach(plat=>{getConditionLabels().forEach(cond=>{lights.forEach(light=>{slots.push({plat,cond,light,range:'',vals:[]});});});});openModalForSlots(slots,'대상 추가',()=>{
+    const isCustomTarget=state.targetType==='custom-target';
+    const name=isCustomTarget?document.getElementById('receptor-custom-input').value.trim():document.getElementById('receptor-name-select').value;
+    if(!name){alert('대상 이름을 입력/선택해주세요.');return false;}const entry={name,ranges:{}};currentModalSlots.forEach(s=>{if(!entry.ranges[s.plat])entry.ranges[s.plat]={};if(!entry.ranges[s.plat][s.cond])entry.ranges[s.plat][s.cond]={};entry.ranges[s.plat][s.cond][s.light]={range:s.range,vals:s.vals};});state.receptors.push(entry);renderReceptorList();return true;},true);});
 document.getElementById('modal-cancel').addEventListener('click',()=>$modal.classList.add('hidden'));
 document.getElementById('modal-close-x').addEventListener('click',()=>$modal.classList.add('hidden'));
 $modal.addEventListener('click',e=>{if(e.target===$modal)$modal.classList.add('hidden');});
@@ -169,7 +208,7 @@ function renderReceptorList(){const $l=document.getElementById('receptor-list');
 function gvs(s){if(!s||!s.vals||!s.vals.length)return 0;return s.vals.reduce((a,b)=>a+b,0)/s.vals.length;}
 function buildTables(){
   const platforms=getPlatforms(),conditions=getConditionLabels(),isRep=state.q6Replicate==='yes',opto=isOpto();const rows=[];
-  state.receptors.forEach(rec=>{platforms.forEach(plat=>{if(!rec.ranges[plat])return;const entry={receptor:rec.name,platform:plat,conditions:{},isOpto:opto};
+  state.receptors.forEach(rec=>{platforms.forEach(plat=>{if(!rec.ranges[plat])return;const entry={receptor:rec.name,platform:plat,conditions:{},isOpto:opto,graphLabel:getGraphLabel(rec.name)};
     conditions.forEach(cond=>{const r=rec.ranges[plat][cond];if(!r)return;
       if(opto){let dv=gvs(r.dark),bv=gvs(r.blue);if(isRep&&rec.ranges2?.[plat]?.[cond]){const r2=rec.ranges2[plat][cond];const d2=gvs(r2.dark),b2=gvs(r2.blue);if(d2)dv=(dv+d2)/2;if(b2)bv=(bv+b2)/2;}entry.conditions[cond]={dark:dv,blue:bv,fold:dv?bv/dv:0};}
       else{let sv=gvs(r.seap);if(isRep&&rec.ranges2?.[plat]?.[cond]){const s2=gvs(rec.ranges2[plat][cond]?.seap);if(s2)sv=(sv+s2)/2;}entry.conditions[cond]={seap:sv};}
