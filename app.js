@@ -208,7 +208,7 @@ function renderReceptorList(){const $l=document.getElementById('receptor-list');
 function gvs(s){if(!s||!s.vals||!s.vals.length)return 0;return s.vals.reduce((a,b)=>a+b,0)/s.vals.length;}
 function buildTables(){
   const platforms=getPlatforms(),conditions=getConditionLabels(),isRep=state.q6Replicate==='yes',opto=isOpto();const rows=[];
-  state.receptors.forEach(rec=>{platforms.forEach(plat=>{if(!rec.ranges[plat])return;const entry={receptor:rec.name,platform:plat,conditions:{},isOpto:opto,graphLabel:getGraphLabel(rec.name)};
+  state.receptors.forEach(rec=>{platforms.forEach(plat=>{if(!rec.ranges[plat])return;const entry={receptor:rec.name,platform:plat,conditions:{},isOpto:opto,optoSystem:state.optoSystem||'',graphLabel:getGraphLabel(rec.name)};
     conditions.forEach(cond=>{const r=rec.ranges[plat][cond];if(!r)return;
       if(opto){let dv=gvs(r.dark),bv=gvs(r.blue);if(isRep&&rec.ranges2?.[plat]?.[cond]){const r2=rec.ranges2[plat][cond];const d2=gvs(r2.dark),b2=gvs(r2.blue);if(d2)dv=(dv+d2)/2;if(b2)bv=(bv+b2)/2;}entry.conditions[cond]={dark:dv,blue:bv,fold:dv?bv/dv:0};}
       else{let sv=gvs(r.seap);if(isRep&&rec.ranges2?.[plat]?.[cond]){const s2=gvs(rec.ranges2[plat][cond]?.seap);if(s2)sv=(sv+s2)/2;}entry.conditions[cond]={seap:sv};}
