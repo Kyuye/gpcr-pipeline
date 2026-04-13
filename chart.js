@@ -100,7 +100,7 @@ function renderOptoPanel(gpcr, recData, ox, oy, pw, ph, includeCtrl, graphLabel)
     }
   });
 
-  const ym = ceilYMax((barValues.length > 0 ? Math.max(...barValues) : 1) * 1.55);
+  const ym = ceilYMax((barValues.length > 0 ? Math.max(...barValues) : 1) * 1.25);
   s += renderAxes(ox, pl, pr, pt, pb, plotH, ym);
 
   const barX = idx => pl + idx * step + (idx >= nPerGroup ? gapMid : 0);
@@ -197,7 +197,7 @@ function renderNonOptoPanel(gpcr, recData, ox, oy, pw, ph, graphLabel) {
   const step = plotW / nBars;
   const barW = step * 0.65;
 
-  const ym = ceilYMax((vals.length > 0 ? Math.max(...vals) : 1) * 1.55);
+  const ym = ceilYMax((vals.length > 0 ? Math.max(...vals) : 1) * 1.25);
   s += renderAxes(ox, pl, pr, pt, pb, plotH, ym);
 
   // No background bands — white only
