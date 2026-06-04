@@ -36,6 +36,13 @@
       <!-- Step 0: Upload -->
       <section class="wizard-step active" id="step-0">
         <div class="step-card">
+          <h2>그래프 출력 용도</h2>
+          <p class="question">이 작업의 그래프 형식을 선택하세요.</p>
+          <div class="radio-group vertical">
+            <label class="radio-card"><input type="radio" name="chart-format" value="lab-meeting"><div class="radio-content"><strong>1. 랩미팅용</strong><span>fold 숫자 3배 크게 (흰 박스 없음), Y축 모든 패널 통일 (글로벌 max)</span></div></label>
+            <label class="radio-card"><input type="radio" name="chart-format" value="paper" checked><div class="radio-content"><strong>2. 논문용</strong><span>fold 숫자 작게 (흰 박스), Y축 패널별 자동 스케일</span></div></label>
+          </div>
+          <hr style="margin:24px 0;border:none;border-top:1px solid #e5e7eb;">
           <h2>Raw Data 엑셀 업로드</h2>
           <p>실험 raw data가 포함된 엑셀 파일(.xlsx, .xls)을 업로드해주세요.</p>
           <div class="upload-area" id="upload-area">
@@ -165,8 +172,17 @@
                   <optgroup label="Serotonin"><option value="HTR1A">HTR1A</option><option value="HTR2A">HTR2A</option><option value="HTR2C">HTR2C</option><option value="HTR4">HTR4</option></optgroup>
                   <optgroup label="Adrenaline"><option value="ADRA1B">ADRA1B</option><option value="ADRA2B">ADRA2B</option><option value="ADRA2C">ADRA2C</option><option value="ADRB2">ADRB2</option></optgroup>
                   <optgroup label="Dopamine"><option value="DRD2">DRD2</option></optgroup>
+                  <optgroup label="Incretin"><option value="GLP1">GLP1 (GLP1R)</option></optgroup>
                   <optgroup label="Others"><option value="Oxytocin">Oxytocin</option><option value="PACAP">PACAP (ADCYAP1)</option></optgroup>
                 </select>
+              </div>
+              <div id="chimera-variants-row" style="margin-bottom:12px;padding:10px 12px;background:#f9fafb;border-radius:8px;border:1px solid #e5e7eb;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+                  <div style="font-size:12px;color:#6b7280;font-weight:600;">Chimera 구조 (각 구조마다 control/antagonist/agonist 슬롯이 생성됩니다)</div>
+                  <button type="button" class="btn btn-outline" id="btn-add-variant" style="padding:4px 12px;font-size:12px;">+ 변형 추가</button>
+                </div>
+                <div id="chim-variants-list"></div>
+                <div id="chim-preview" style="margin-top:6px;font-size:12px;color:#059669;font-family:monospace;line-height:1.6;"></div>
               </div>
               <div id="selection-target-bar" class="selection-target-bar">아래 슬롯을 클릭한 뒤, 표에서 셀을 드래그하세요</div>
               <div class="modal-body-split">
@@ -303,7 +319,7 @@
     </div>
   </div>
 
-  <script src="chart.js?v=20260424"></script>
-  <script src="app.js?v=20260424"></script>
+  <script src="chart.js?v=20260519a"></script>
+  <script src="app.js?v=20260519a"></script>
 </body>
 </html>

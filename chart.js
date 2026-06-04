@@ -9,13 +9,32 @@
 const GPCR_FULL_ORDER = [
   'CHRM1','CHRM2','CHRM3','CHRM4','CHRM5','HRH1','HRH2','HRH3',
   'HRH4','ADORA1','ADORA2A','ADORA2B','ADORA3','HTR1A','HTR2A','HTR4',
-  'HTR2C','ADRA1B','ADRA2B','ADRA2C','ADRB2','Oxytocin','PACAP',''
+  'HTR2C','ADRA1B','ADRA2B','ADRA2C','ADRB2','Oxytocin','PACAP','GLP1'
 ];
-const DISPLAY_NAME = { 'PACAP':'ADCYAP1', 'Oxytocin':'Oxytocin' };
+const DISPLAY_NAME = { 'PACAP':'ADCYAP1', 'Oxytocin':'Oxytocin', 'GLP1':'GLP1R' };
 
-function generateSVG(tableData, vizMode, ctrlMode) {
+let _isLab = false, _globalYMax = 0;
+
+function computeGlobalYMax(tableData, includeCtrl) {
+  let m = 0;
+  tableData.forEach(d => {
+    Object.entries(d.conditions || {}).forEach(([cond, c]) => {
+      if (!c) return;
+      const isCtrl = cond.startsWith('control');
+      if (isCtrl && !includeCtrl) return;
+      if (typeof c.dark === 'number') m = Math.max(m, c.dark);
+      if (typeof c.blue === 'number') m = Math.max(m, c.blue);
+      if (typeof c.seap === 'number') m = Math.max(m, c.seap);
+    });
+  });
+  return ceilYMax((m || 1) * 1.25);
+}
+
+function generateSVG(tableData, vizMode, ctrlMode, chartFormat) {
   const W = 210, ML = 7, MR = 7, MT = 9, MB = 3, GAP = 3.5, COLS = 4;
   const includeCtrl = (ctrlMode === 'include');
+  _isLab = (chartFormat === 'lab-meeting');
+  _globalYMax = _isLab ? computeGlobalYMax(tableData, includeCtrl) : 0;
 
   // Determine chart type from first entry
   const first = tableData[0] || {};
@@ -125,7 +144,7 @@ function panelGpcr(gpcr, recData, ox, oy, pw, ph, includeCtrl, graphLabel, platf
     }
   });
 
-  const ym=ceilYMax((barValues.length>0?Math.max(...barValues):1)*1.25);
+  const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((barValues.length>0?Math.max(...barValues):1)*1.25);
   s+=renderAxes(ox,pl,pr,pt,pb,plotH,ym);
 
   const barX=idx=>pl+idx*step+Math.floor(idx/nPG)*gapMid;
@@ -146,15 +165,21 @@ function panelGpcr(gpcr, recData, ox, oy, pw, ph, includeCtrl, graphLabel, platf
 
   // Fold brackets
   let bLines='';const fGroups=[];
+  const lvSpacing=_isLab?4.0:2.0, lvOffset=_isLab?2.5:1.2, foldFont=_isLab?2.6:0.882;
   if(recData){platforms.forEach((plat,pi)=>{if(!recData[plat]?.ratios)return;const ratios=recData[plat].ratios,base=pi*nPG;
     const tDI=includeCtrl?base+2:base,tBI=includeCtrl?base+3:base+1,aDI=includeCtrl?base+4:base+2,aBI=includeCtrl?base+5:base+3;
     const pairs=[{l:'AG-B/ATG-D',c:'#d32f2f',f:tDI,t:aBI,lv:0},{l:'AG-B/ATG-B',c:'#1976d2',f:tBI,t:aBI,lv:1},{l:'AG-B/AG-D',c:'#388e3c',f:aDI,t:aBI,lv:2}];
     const gBars=includeCtrl?[base+2,base+3,base+4,base+5]:[base,base+1,base+2,base+3];
     const gTop=Math.min(...gBars.map(i=>barTopY[i]??pb));
-    pairs.forEach(bp=>{const r=ratios[bp.l]||0;if(!r)return;const by=gTop-1.2-bp.lv*2.0,cf=barCX(bp.f),ct=barCX(bp.t),yf=barTopY[bp.f]??pb,yt=barTopY[bp.t]??pb;
+    pairs.forEach(bp=>{const r=ratios[bp.l]||0;if(!r)return;const by=gTop-lvOffset-bp.lv*lvSpacing,cf=barCX(bp.f),ct=barCX(bp.t),yf=barTopY[bp.f]??pb,yt=barTopY[bp.t]??pb;
       bLines+=`<polyline points="${cf},${yf} ${cf},${by} ${ct},${by} ${ct},${yt}" fill="none" stroke="${bp.c}" stroke-width="0.088"/>`;
-      const mx=(cf+ct)/2,fs=r>=100?Math.round(r)+'x':r.toFixed(1)+'x',tw=fs.length*0.45+0.2;
-      fGroups.push(`<g><rect x="${mx-tw/2}" y="${by-0.6}" width="${tw}" height="1.2" fill="white"/><text x="${mx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-weight="bold" font-size="0.882" fill="${bp.c}">${fs}</text></g>`);
+      const mx=(cf+ct)/2,fs=r>=100?Math.round(r)+'x':r.toFixed(1)+'x';
+      if(_isLab){
+        fGroups.push(`<text x="${mx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-weight="bold" font-size="${foldFont}" fill="${bp.c}">${fs}</text>`);
+      } else {
+        const tw=fs.length*0.45+0.2;
+        fGroups.push(`<g><rect x="${mx-tw/2}" y="${by-0.6}" width="${tw}" height="1.2" fill="white"/><text x="${mx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-weight="bold" font-size="${foldFont}" fill="${bp.c}">${fs}</text></g>`);
+      }
     });
   });}
   s+=bLines;fGroups.forEach(g=>{s+=g;});
@@ -211,7 +236,7 @@ function panelOptoSimple(gpcr, recData, ox, oy, pw, ph, graphLabel, platforms) {
     }
   });
 
-  const ym=ceilYMax((barValues.length>0?Math.max(...barValues):1)*1.25);
+  const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((barValues.length>0?Math.max(...barValues):1)*1.25);
   s+=renderAxes(ox,pl,pr,pt,pb,plotH,ym);
 
   const barX=idx=>pl+idx*step+Math.floor(idx/nPG)*gapMid;
@@ -226,14 +251,20 @@ function panelOptoSimple(gpcr, recData, ox, oy, pw, ph, graphLabel, platforms) {
 
   // Fold brackets (blue/dark) per condition
   let bLines='';const fGroups=[];
+  const lvOffset=_isLab?2.5:1.2, foldFont=_isLab?2.6:0.882;
   foldPairs.forEach(({dIdx,bIdx,fold})=>{
     if(!fold)return;
     const cf=barCX(dIdx),ct=barCX(bIdx);
     const yf=barTopY[dIdx]??pb,yt=barTopY[bIdx]??pb;
-    const by=Math.min(yf,yt)-1.2;
+    const by=Math.min(yf,yt)-lvOffset;
     bLines+=`<polyline points="${cf},${yf} ${cf},${by} ${ct},${by} ${ct},${yt}" fill="none" stroke="#1976d2" stroke-width="0.088"/>`;
-    const mx=(cf+ct)/2,fs=fold>=100?Math.round(fold)+'x':fold.toFixed(1)+'x',tw=fs.length*0.45+0.2;
-    fGroups.push(`<g><rect x="${mx-tw/2}" y="${by-0.6}" width="${tw}" height="1.2" fill="white"/><text x="${mx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-weight="bold" font-size="0.882" fill="#1976d2">${fs}</text></g>`);
+    const mx=(cf+ct)/2,fs=fold>=100?Math.round(fold)+'x':fold.toFixed(1)+'x';
+    if(_isLab){
+      fGroups.push(`<text x="${mx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-weight="bold" font-size="${foldFont}" fill="#1976d2">${fs}</text>`);
+    } else {
+      const tw=fs.length*0.45+0.2;
+      fGroups.push(`<g><rect x="${mx-tw/2}" y="${by-0.6}" width="${tw}" height="1.2" fill="white"/><text x="${mx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-weight="bold" font-size="${foldFont}" fill="#1976d2">${fs}</text></g>`);
+    }
   });
   s+=bLines;fGroups.forEach(g=>{s+=g;});
 
@@ -272,7 +303,7 @@ function panelNonOpto(gpcr, recData, ox, oy, pw, ph, graphLabel) {
   const nBars=conditions.length||1;
   const step=plotW/nBars,barW=step*0.65;
 
-  const ym=ceilYMax((vals.length>0?Math.max(...vals):1)*1.25);
+  const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((vals.length>0?Math.max(...vals):1)*1.25);
   s+=renderAxes(ox,pl,pr,pt,pb,plotH,ym);
 
   // No background — white only

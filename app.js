@@ -8,6 +8,9 @@ const state = {
   totalSteps: 12,
   workbook: null, sheetData: {}, sheetNames: [],
 
+  // Chart format
+  chartFormat: 'paper',  // 'paper' | 'lab-meeting'
+
   // Q0
   expType: '',           // 'opto' | 'non-opto'
   optoSystem: '',        // 'gpcr' | 'launcher' | 'opto-custom'
@@ -73,7 +76,7 @@ function goToStep(n){
 
 function validateStep(n){
   switch(n){
-    case 0: return !!state.workbook;
+    case 0: {const cf=document.querySelector('input[name="chart-format"]:checked');if(cf)state.chartFormat=cf.value;return !!state.workbook && !!state.chartFormat;}
     case 1: {
       const r=document.querySelector('input[name="exp-type"]:checked');if(!r)return false;state.expType=r.value;
       if(r.value==='opto'){const s=document.querySelector('input[name="opto-system"]:checked');if(!s)return false;state.optoSystem=s.value;
@@ -114,14 +117,23 @@ document.querySelectorAll('input[name="exp-type"]').forEach(r=>r.addEventListene
 document.querySelectorAll('input[name="opto-system"]').forEach(r=>r.addEventListener('change',()=>{document.getElementById('opto-custom-field').classList.toggle('hidden',r.value!=='opto-custom');updateLabelPreview();}));
 document.querySelectorAll('input[name="target-type"]').forEach(r=>r.addEventListener('change',()=>{updateLabelPreview();}));
 
-function getGraphLabel(targetName){
+function getModsSuffix(mods){
+  const s = (typeof mods==='string'?mods:(mods&&mods.custom)||'').trim();
+  return s?'-'+s:'';
+}
+function getReceptorKey(rec){return (rec.name||'')+getModsSuffix(rec.modifications);}
+function getGraphLabel(recOrName){
+  const isObj = recOrName && typeof recOrName==='object';
+  const name = isObj?(recOrName.name||''):(recOrName||'');
+  const mods = isObj?recOrName.modifications:null;
+  const base = name + getModsSuffix(mods);
   const et=state.expType||document.querySelector('input[name="exp-type"]:checked')?.value||'opto';
   const os=state.optoSystem||document.querySelector('input[name="opto-system"]:checked')?.value||'gpcr';
   const ocn=state.optoCustomName||document.getElementById('opto-custom-name')?.value?.trim()||'System';
-  if(et==='non-opto') return targetName;
-  if(os==='gpcr') return `${targetName}-iTango-LAUNCHER`;
-  if(os==='launcher') return `${targetName}-LAUNCHER`;
-  return `${targetName}-${ocn}`;
+  if(et==='non-opto') return base;
+  if(os==='gpcr') return `${base}-iTango-LAUNCHER`;
+  if(os==='launcher') return `${base}-LAUNCHER`;
+  return `${base}-${ocn}`;
 }
 
 function updateLabelPreview(){
@@ -170,8 +182,46 @@ function openRepModal(idx){const rec=state.receptors[idx];const slots=[];const l
    MODAL — Drag-Select
    ============================================================ */
 const $modal=document.getElementById('receptor-modal'),$targetBar=document.getElementById('selection-target-bar'),$slotsContainer=document.getElementById('modal-slots-side');
-let currentModalSlots=[],modalConfirmCallback=null;
-function openModalForSlots(slots,title,onConfirm,showRecSel=true){currentModalSlots=slots;modalConfirmCallback=onConfirm;document.getElementById('modal-title').textContent=title;document.getElementById('receptor-select-row').style.display=showRecSel?'':'none';state.activeSlotKey=null;state.modalActiveSheet=state.sheetNames[0];$modal.classList.remove('hidden');renderSheetTabs('modal-sheet-tabs','modal-preview-table',true);renderSheetTable(state.sheetNames[0],'modal-preview-table',true);renderSlots();updateTargetBar();attachDragHandlers();const fe=currentModalSlots.findIndex(s=>!s.range);if(fe>=0)activateSlot(fe);}
+let currentModalSlots=[],modalConfirmCallback=null,currentChimVariants=[];
+function openModalForSlots(slots,title,onConfirm,showRecSel=true){currentModalSlots=slots;modalConfirmCallback=onConfirm;document.getElementById('modal-title').textContent=title;document.getElementById('receptor-select-row').style.display=showRecSel?'':'none';document.getElementById('chimera-variants-row').style.display=showRecSel?'':'none';state.activeSlotKey=null;state.modalActiveSheet=state.sheetNames[0];$modal.classList.remove('hidden');renderSheetTabs('modal-sheet-tabs','modal-preview-table',true);renderSheetTable(state.sheetNames[0],'modal-preview-table',true);renderSlots();updateTargetBar();attachDragHandlers();const fe=currentModalSlots.findIndex(s=>!s.range);if(fe>=0)activateSlot(fe);}
+
+function buildSlotsForVariant(variantIdx){
+  const out=[];const lights=isOpto()?['dark','blue']:['seap'];
+  getPlatforms().forEach(plat=>{getConditionLabels().forEach(cond=>{lights.forEach(light=>{out.push({variantIdx,plat,cond,light,range:'',vals:[]});});});});
+  return out;
+}
+function renderChimVariants(){
+  const $l=document.getElementById('chim-variants-list');$l.innerHTML='';
+  currentChimVariants.forEach((v,i)=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;gap:8px;align-items:center;margin-bottom:6px;';
+    row.innerHTML=`<span style="font-size:12px;color:#6b7280;min-width:36px;">#${i+1}</span>
+      <input type="text" class="text-input" data-vidx="${i}" value="${(v.label||'').replace(/"/g,'&quot;')}" placeholder="modification (비우면 wild-type, 예: ΔV2tail / ΔCtail / ΔICL3 / +Rho-tail)" style="flex:1;">
+      <button type="button" data-vidx="${i}" class="btn-remove-variant" ${currentChimVariants.length<=1?'disabled':''} style="padding:4px 10px;font-size:12px;background:${currentChimVariants.length<=1?'#f3f4f6':'#fee2e2'};border:1px solid ${currentChimVariants.length<=1?'#d1d5db':'#fca5a5'};border-radius:4px;color:${currentChimVariants.length<=1?'#9ca3af':'#991b1b'};cursor:${currentChimVariants.length<=1?'not-allowed':'pointer'};">삭제</button>`;
+    $l.appendChild(row);
+  });
+  $l.querySelectorAll('input[data-vidx]').forEach(inp=>{
+    inp.addEventListener('input',()=>{currentChimVariants[+inp.dataset.vidx].label=inp.value;renderSlots();updateChimPreview();});
+  });
+  $l.querySelectorAll('.btn-remove-variant').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      if(currentChimVariants.length<=1)return;
+      const vi=+btn.dataset.vidx;
+      currentChimVariants.splice(vi,1);
+      currentModalSlots=currentModalSlots.filter(s=>s.variantIdx!==vi);
+      currentModalSlots.forEach(s=>{if(s.variantIdx>vi)s.variantIdx--;});
+      state.activeSlotKey=null;
+      renderChimVariants();renderSlots();updateTargetBar();updateChimPreview();
+    });
+  });
+}
+document.getElementById('btn-add-variant').addEventListener('click',()=>{
+  const newIdx=currentChimVariants.length;
+  currentChimVariants.push({label:''});
+  buildSlotsForVariant(newIdx).forEach(s=>currentModalSlots.push(s));
+  renderChimVariants();renderSlots();updateChimPreview();
+});
+
 document.getElementById('add-receptor-btn').addEventListener('click',()=>{readQ3Values();
   // Toggle receptor select vs custom input based on targetType
   const isCustomTarget=state.targetType==='custom-target';
@@ -179,18 +229,65 @@ document.getElementById('add-receptor-btn').addEventListener('click',()=>{readQ3
   document.getElementById('receptor-custom-input').classList.toggle('hidden',!isCustomTarget);
   if(isCustomTarget) document.getElementById('receptor-custom-input').value='';
   else document.getElementById('receptor-name-select').value='';
-  const slots=[];const lights=isOpto()?['dark','blue']:['seap'];getPlatforms().forEach(plat=>{getConditionLabels().forEach(cond=>{lights.forEach(light=>{slots.push({plat,cond,light,range:'',vals:[]});});});});openModalForSlots(slots,'대상 추가',()=>{
+  // Reset chimera variants to one empty (wild-type)
+  currentChimVariants=[{label:''}];
+  const slots=buildSlotsForVariant(0);
+  renderChimVariants();updateChimPreview();
+  openModalForSlots(slots,'대상 추가',()=>{
     const isCustomTarget=state.targetType==='custom-target';
     const name=isCustomTarget?document.getElementById('receptor-custom-input').value.trim():document.getElementById('receptor-name-select').value;
-    if(!name){alert('대상 이름을 입력/선택해주세요.');return false;}const entry={name,ranges:{}};currentModalSlots.forEach(s=>{if(!entry.ranges[s.plat])entry.ranges[s.plat]={};if(!entry.ranges[s.plat][s.cond])entry.ranges[s.plat][s.cond]={};entry.ranges[s.plat][s.cond][s.light]={range:s.range,vals:s.vals};});state.receptors.push(entry);renderReceptorList();return true;},true);});
+    if(!name){alert('대상 이름을 입력/선택해주세요.');return false;}
+    currentChimVariants.forEach((variant,vi)=>{
+      const entry={name,modifications:(variant.label||'').trim(),ranges:{}};
+      currentModalSlots.filter(s=>s.variantIdx===vi).forEach(s=>{
+        if(!entry.ranges[s.plat])entry.ranges[s.plat]={};
+        if(!entry.ranges[s.plat][s.cond])entry.ranges[s.plat][s.cond]={};
+        entry.ranges[s.plat][s.cond][s.light]={range:s.range,vals:s.vals};
+      });
+      state.receptors.push(entry);
+    });
+    renderReceptorList();return true;
+  },true);});
+
+function updateChimPreview(){
+  const el=document.getElementById('chim-preview');if(!el)return;
+  const isCustomTarget=state.targetType==='custom-target';
+  const name=isCustomTarget
+    ?(document.getElementById('receptor-custom-input').value.trim()||'TargetName')
+    :(document.getElementById('receptor-name-select').value||'CHRM1');
+  if(!currentChimVariants.length){el.textContent='';return;}
+  const labels=currentChimVariants.map(v=>getGraphLabel({name,modifications:(v.label||'').trim()}));
+  el.innerHTML='추가될 라벨:<br>'+labels.map(l=>'· '+l).join('<br>');
+}
+['receptor-name-select','receptor-custom-input'].forEach(id=>{
+  const el=document.getElementById(id);if(!el)return;
+  el.addEventListener('input',updateChimPreview);
+  el.addEventListener('change',updateChimPreview);
+});
 document.getElementById('modal-cancel').addEventListener('click',()=>$modal.classList.add('hidden'));
 document.getElementById('modal-close-x').addEventListener('click',()=>$modal.classList.add('hidden'));
 $modal.addEventListener('click',e=>{if(e.target===$modal)$modal.classList.add('hidden');});
 document.getElementById('modal-confirm').addEventListener('click',()=>{if(modalConfirmCallback){const r=modalConfirmCallback();if(r===false)return;}$modal.classList.add('hidden');});
 
-function renderSlots(){$slotsContainer.innerHTML='';let lp='';currentModalSlots.forEach((s,i)=>{if(s.plat!==lp){lp=s.plat;const h=document.createElement('div');h.className='slot-platform-header';h.textContent=s.plat;$slotsContainer.appendChild(h);}const d=document.createElement('div');d.className='range-slot'+(s.range?' slot-filled':'');d.dataset.slotIdx=i;const ll=s.light==='seap'?'SEAP':s.light==='dark'?'DARK':'BLUE',lc=s.light==='dark'?'#555':s.light==='seap'?'#7c3aed':'#3b82f6';d.innerHTML=`<div class="slot-header"><span class="slot-label" style="color:${lc}">${s.cond} — ${ll}</span><button class="slot-clear" data-idx="${i}" title="초기화">&times;</button></div><div class="slot-value">${s.range?`<span class="range-text">${s.range}</span> <span class="val-text">[${s.vals.map(v=>typeof v==='number'?(Number.isInteger(v)?v:v.toFixed(2)):v).join(', ')}]</span>`:'<span style="color:#d1d5db">표에서 드래그</span>'}</div>`;d.addEventListener('click',e=>{if(!e.target.classList.contains('slot-clear'))activateSlot(i);});d.querySelector('.slot-clear').addEventListener('click',e=>{e.stopPropagation();s.range='';s.vals=[];renderSlots();clearHL();activateSlot(i);});$slotsContainer.appendChild(d);});}
+function variantDisplayName(vi){
+  const v=currentChimVariants[vi];if(!v)return `#${vi+1}`;
+  const isCT=state.targetType==='custom-target';
+  const name=isCT?(document.getElementById('receptor-custom-input')?.value.trim()||'(이름없음)'):(document.getElementById('receptor-name-select')?.value||'(이름없음)');
+  return name+getModsSuffix((v.label||'').trim());
+}
+function renderSlots(){$slotsContainer.innerHTML='';let lv=-1,lp='';currentModalSlots.forEach((s,i)=>{
+  if(s.variantIdx!==undefined && s.variantIdx!==lv){
+    lv=s.variantIdx;lp='';
+    const vh=document.createElement('div');
+    vh.style.cssText='margin-top:12px;margin-bottom:6px;padding:6px 10px;background:#dbeafe;border-radius:6px;font-weight:600;font-size:13px;color:#1e40af;';
+    vh.textContent=`▸ Chimera #${s.variantIdx+1}: ${variantDisplayName(s.variantIdx)}`;
+    $slotsContainer.appendChild(vh);
+  }
+  if(s.plat!==lp){lp=s.plat;const h=document.createElement('div');h.className='slot-platform-header';h.textContent=s.plat;$slotsContainer.appendChild(h);}
+  const d=document.createElement('div');d.className='range-slot'+(s.range?' slot-filled':'');d.dataset.slotIdx=i;const ll=s.light==='seap'?'SEAP':s.light==='dark'?'DARK':'BLUE',lc=s.light==='dark'?'#555':s.light==='seap'?'#7c3aed':'#3b82f6';d.innerHTML=`<div class="slot-header"><span class="slot-label" style="color:${lc}">${s.cond} — ${ll}</span><button class="slot-clear" data-idx="${i}" title="초기화">&times;</button></div><div class="slot-value">${s.range?`<span class="range-text">${s.range}</span> <span class="val-text">[${s.vals.map(v=>typeof v==='number'?(Number.isInteger(v)?v:v.toFixed(2)):v).join(', ')}]</span>`:'<span style="color:#d1d5db">표에서 드래그</span>'}</div>`;d.addEventListener('click',e=>{if(!e.target.classList.contains('slot-clear'))activateSlot(i);});d.querySelector('.slot-clear').addEventListener('click',e=>{e.stopPropagation();s.range='';s.vals=[];renderSlots();clearHL();activateSlot(i);});$slotsContainer.appendChild(d);
+});}
 function activateSlot(i){state.activeSlotKey=i;$slotsContainer.querySelectorAll('.range-slot').forEach((el,j)=>el.classList.toggle('slot-active',j===i));updateTargetBar();clearHL();const s=currentModalSlots[i];if(s&&s.range)hlRange(s.range);}
-function updateTargetBar(){if(state.activeSlotKey===null){$targetBar.textContent='아래 슬롯을 클릭한 뒤, 표에서 셀을 드래그하세요';$targetBar.classList.remove('active');return;}const s=currentModalSlots[state.activeSlotKey];const ll=s.light==='seap'?'SEAP':s.light==='dark'?'DARK':'BLUE';$targetBar.innerHTML=`현재: <strong>${s.cond} — ${ll}</strong> (${s.plat})`;$targetBar.classList.add('active');}
+function updateTargetBar(){if(state.activeSlotKey===null){$targetBar.textContent='아래 슬롯을 클릭한 뒤, 표에서 셀을 드래그하세요';$targetBar.classList.remove('active');return;}const s=currentModalSlots[state.activeSlotKey];const ll=s.light==='seap'?'SEAP':s.light==='dark'?'DARK':'BLUE';const vName=s.variantIdx!==undefined?variantDisplayName(s.variantIdx)+' · ':'';$targetBar.innerHTML=`현재: <strong>${vName}${s.cond} — ${ll}</strong> (${s.plat})`;$targetBar.classList.add('active');}
 
 function attachDragHandlers(){const w=document.getElementById('selectable-table-wrapper');w.onmousedown=e=>{const td=e.target.closest('td[data-row]');if(!td||state.activeSlotKey===null)return;e.preventDefault();state.isDragging=true;state.dragStart={row:+td.dataset.row,col:+td.dataset.col};state.dragEnd={...state.dragStart};hlDrag();};w.onmousemove=e=>{if(!state.isDragging)return;const td=e.target.closest('td[data-row]');if(td){state.dragEnd={row:+td.dataset.row,col:+td.dataset.col};hlDrag();}};w.onmouseup=()=>{if(state.isDragging){state.isDragging=false;finalize();}};w.onmouseleave=()=>{if(state.isDragging){state.isDragging=false;finalize();}};}
 function hlDrag(){clearHL();if(!state.dragStart||!state.dragEnd)return;const sr=Math.min(state.dragStart.row,state.dragEnd.row),er=Math.max(state.dragStart.row,state.dragEnd.row),sc=Math.min(state.dragStart.col,state.dragEnd.col),ec=Math.max(state.dragStart.col,state.dragEnd.col);document.getElementById('modal-preview-table').querySelectorAll('td[data-row]').forEach(td=>{const r=+td.dataset.row,c=+td.dataset.col;if(r>=sr&&r<=er&&c>=sc&&c<=ec)td.classList.add('cell-selecting');});}
@@ -202,13 +299,13 @@ function parseCR(ref){const m=ref.trim().match(/^([A-Z]+)(\d+)$/i);if(!m)return 
 function finalize(){if(!state.dragStart||!state.dragEnd||state.activeSlotKey===null)return;const sr=Math.min(state.dragStart.row,state.dragEnd.row),er=Math.max(state.dragStart.row,state.dragEnd.row),sc=Math.min(state.dragStart.col,state.dragEnd.col),ec=Math.max(state.dragStart.col,state.dragEnd.col);const range=rangeString(sr,sc,er,ec);const sheet=state.modalActiveSheet||state.sheetNames[0],data=state.sheetData[sheet]||[];const vals=[];for(let r=sr;r<=er;r++)for(let c=sc;c<=ec;c++){if(data[r]&&data[r][c]!==undefined&&data[r][c]!==''){const v=parseFloat(data[r][c]);vals.push(isNaN(v)?0:v);}}currentModalSlots[state.activeSlotKey].range=range;currentModalSlots[state.activeSlotKey].vals=vals;clearHL();document.getElementById('modal-preview-table').querySelectorAll('td[data-row]').forEach(td=>{const r=+td.dataset.row,c=+td.dataset.col;if(r>=sr&&r<=er&&c>=sc&&c<=ec)td.classList.add('cell-selected','cell-selected-flash');});renderSlots();activateSlot(state.activeSlotKey);const next=currentModalSlots.findIndex((s,i)=>i>state.activeSlotKey&&!s.range);if(next>=0)setTimeout(()=>activateSlot(next),300);}
 
 /* ── Receptor list ───────────────────────────────────────── */
-function renderReceptorList(){const $l=document.getElementById('receptor-list');$l.innerHTML='';state.receptors.forEach((rec,idx)=>{const div=document.createElement('div');div.className='receptor-entry';let info='';Object.keys(rec.ranges).forEach(plat=>{info+=`<div style="font-size:12px;color:#6b7280;margin-top:3px"><strong>${plat}:</strong> `;info+=Object.keys(rec.ranges[plat]).map(c=>{if(rec.ranges[plat][c].seap){return`${c} (${rec.ranges[plat][c].seap?.range||'-'})`;}const d=rec.ranges[plat][c].dark,b=rec.ranges[plat][c].blue;return`${c} (D:${d?.range||'-'}, B:${b?.range||'-'})`;}).join(' | ')+'</div>';});div.innerHTML=`<div class="receptor-entry-header"><h4>${rec.name}</h4><button class="btn-remove" data-idx="${idx}">삭제</button></div>${info}`;$l.appendChild(div);});$l.querySelectorAll('.btn-remove').forEach(btn=>btn.addEventListener('click',()=>{state.receptors.splice(+btn.dataset.idx,1);renderReceptorList();}));}
+function renderReceptorList(){const $l=document.getElementById('receptor-list');$l.innerHTML='';state.receptors.forEach((rec,idx)=>{const div=document.createElement('div');div.className='receptor-entry';let info='';Object.keys(rec.ranges).forEach(plat=>{info+=`<div style="font-size:12px;color:#6b7280;margin-top:3px"><strong>${plat}:</strong> `;info+=Object.keys(rec.ranges[plat]).map(c=>{if(rec.ranges[plat][c].seap){return`${c} (${rec.ranges[plat][c].seap?.range||'-'})`;}const d=rec.ranges[plat][c].dark,b=rec.ranges[plat][c].blue;return`${c} (D:${d?.range||'-'}, B:${b?.range||'-'})`;}).join(' | ')+'</div>';});const modSuffix=getModsSuffix(rec.modifications);const modBadge=modSuffix?` <span style="color:#059669;font-size:13px;font-weight:500;">${modSuffix}</span>`:'';div.innerHTML=`<div class="receptor-entry-header"><h4>${rec.name}${modBadge}</h4><button class="btn-remove" data-idx="${idx}">삭제</button></div>${info}`;$l.appendChild(div);});$l.querySelectorAll('.btn-remove').forEach(btn=>btn.addEventListener('click',()=>{state.receptors.splice(+btn.dataset.idx,1);renderReceptorList();}));}
 
 /* ── Table Building ──────────────────────────────────────── */
 function gvs(s){if(!s||!s.vals||!s.vals.length)return 0;return s.vals.reduce((a,b)=>a+b,0)/s.vals.length;}
 function buildTables(){
   const platforms=getPlatforms(),conditions=getConditionLabels(),isRep=state.q6Replicate==='yes',opto=isOpto();const rows=[];
-  state.receptors.forEach(rec=>{platforms.forEach(plat=>{if(!rec.ranges[plat])return;const entry={receptor:rec.name,platform:plat,conditions:{},isOpto:opto,optoSystem:state.optoSystem||'',graphLabel:getGraphLabel(rec.name)};
+  state.receptors.forEach(rec=>{platforms.forEach(plat=>{if(!rec.ranges[plat])return;const recKey=getReceptorKey(rec);const entry={receptor:recKey,baseName:rec.name,modifications:rec.modifications||null,platform:plat,conditions:{},isOpto:opto,optoSystem:state.optoSystem||'',graphLabel:getGraphLabel(rec)};
     conditions.forEach(cond=>{const r=rec.ranges[plat][cond];if(!r)return;
       if(opto){let dv=gvs(r.dark),bv=gvs(r.blue);if(isRep&&rec.ranges2?.[plat]?.[cond]){const r2=rec.ranges2[plat][cond];const d2=gvs(r2.dark),b2=gvs(r2.blue);if(d2)dv=(dv+d2)/2;if(b2)bv=(bv+b2)/2;}entry.conditions[cond]={dark:dv,blue:bv,fold:dv?bv/dv:0};}
       else{let sv=gvs(r.seap);if(isRep&&rec.ranges2?.[plat]?.[cond]){const s2=gvs(rec.ranges2[plat][cond]?.seap);if(s2)sv=(sv+s2)/2;}entry.conditions[cond]={seap:sv};}
@@ -237,13 +334,13 @@ function renderAT(tid,data,rd){
 }
 
 /* ── Chart ───────────────────────────────────────────────── */
-function renderChart(){if(!state.table1Data||!state.table1Data.length)return;state.svgContent=generateSVG(state.table1Data,state.vizMode,state.ctrlMode);document.getElementById('graph-preview').innerHTML=state.svgContent;}
+function renderChart(){if(!state.table1Data||!state.table1Data.length)return;state.svgContent=generateSVG(state.table1Data,state.vizMode,state.ctrlMode,state.chartFormat);document.getElementById('graph-preview').innerHTML=state.svgContent;}
 
 /* ── Downloads ───────────────────────────────────────────── */
 document.getElementById('btn-download-svg').addEventListener('click',()=>{if(!state.svgContent)return;saveAs(new Blob([state.svgContent],{type:'image/svg+xml;charset=utf-8'}),`GPCR_chart_${state.q1Description.replace(/\s+/g,'_')||'output'}.svg`);});
 document.getElementById('btn-download-excel').addEventListener('click',downloadExcel);
 function downloadExcel(){const wb=XLSX.utils.book_new();state.sheetNames.forEach(n=>XLSX.utils.book_append_sheet(wb,state.workbook.Sheets[n],n));XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(buildER(state.table1Data,false)),'Table1_Analysis');XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(buildER(state.table1Data,true)),'Table2_Rounded');XLSX.writeFile(wb,`GPCR_analysis_${state.q1Description.replace(/\s+/g,'_')||'output'}.xlsx`);}
-function buildER(data,rd){if(!data||!data.length)return[['No data']];const conds=getConditionLabels(),opto=data[0].isOpto;const rl=opto?['DARK','BLUE','FOLD']:['SEAP'];if(opto&&data[0].ratios)rl.push('AG-B/AG-D','AG-B/ATG-D','AG-B/ATG-B');const rows=[];const h1=[''];data.forEach(d=>{h1.push(`${d.receptor}-iTango-${d.platform}`);for(let i=1;i<conds.length;i++)h1.push('');});rows.push(h1);const h2=[''];data.forEach(()=>conds.forEach(c=>h2.push(c)));rows.push(h2);rl.forEach(label=>{const row=[label];data.forEach(d=>conds.forEach(cond=>{let v=0;if(label==='SEAP')v=d.conditions[cond]?.seap||0;else if(label==='DARK')v=d.conditions[cond]?.dark||0;else if(label==='BLUE')v=d.conditions[cond]?.blue||0;else if(label==='FOLD')v=d.conditions[cond]?.fold||0;else if(d.ratios)v=d.ratios[label]||0;row.push(rd?parseFloat(v.toFixed(2)):v);}));rows.push(row);});return rows;}
+function buildER(data,rd){if(!data||!data.length)return[['No data']];const conds=getConditionLabels(),opto=data[0].isOpto;const rl=opto?['DARK','BLUE','FOLD']:['SEAP'];if(opto&&data[0].ratios)rl.push('AG-B/AG-D','AG-B/ATG-D','AG-B/ATG-B');const rows=[];const h1=[''];data.forEach(d=>{h1.push(`${d.graphLabel||d.receptor}-${d.platform}`);for(let i=1;i<conds.length;i++)h1.push('');});rows.push(h1);const h2=[''];data.forEach(()=>conds.forEach(c=>h2.push(c)));rows.push(h2);rl.forEach(label=>{const row=[label];data.forEach(d=>conds.forEach(cond=>{let v=0;if(label==='SEAP')v=d.conditions[cond]?.seap||0;else if(label==='DARK')v=d.conditions[cond]?.dark||0;else if(label==='BLUE')v=d.conditions[cond]?.blue||0;else if(label==='FOLD')v=d.conditions[cond]?.fold||0;else if(d.ratios)v=d.ratios[label]||0;row.push(rd?parseFloat(v.toFixed(2)):v);}));rows.push(row);});return rows;}
 
 /* ── 2차: 마스터 파일 업데이트 ────────────────────────────── */
 const masterFiles={rep:null,analysis:null,anova:null};
@@ -280,11 +377,11 @@ function updateAnalysisFile(wb){
   let wsName=wb.SheetNames.find(n=>n.includes('Individual'))||wb.SheetNames[0];
   const ws=wb.Sheets[wsName];
   const existing=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
-  const RECEPTOR_CAT={CHRM1:'Acetylcholine',CHRM2:'Acetylcholine',CHRM3:'Acetylcholine',CHRM4:'Acetylcholine',CHRM5:'Acetylcholine',HRH1:'Histamine',HRH2:'Histamine',HRH3:'Histamine',HRH4:'Histamine',ADORA1:'Adenosine',ADORA2A:'Adenosine',ADORA2B:'Adenosine',ADORA3:'Adenosine',HTR1A:'Serotonin',HTR2A:'Serotonin',HTR2C:'Serotonin',HTR4:'Serotonin',ADRA1B:'Adrenaline',ADRA2B:'Adrenaline',ADRA2C:'Adrenaline',ADRB2:'Adrenaline',DRD2:'Dopamine',Oxytocin:'Oxytocin',PACAP:'PACAP'};
+  const RECEPTOR_CAT={CHRM1:'Acetylcholine',CHRM2:'Acetylcholine',CHRM3:'Acetylcholine',CHRM4:'Acetylcholine',CHRM5:'Acetylcholine',HRH1:'Histamine',HRH2:'Histamine',HRH3:'Histamine',HRH4:'Histamine',ADORA1:'Adenosine',ADORA2A:'Adenosine',ADORA2B:'Adenosine',ADORA3:'Adenosine',HTR1A:'Serotonin',HTR2A:'Serotonin',HTR2C:'Serotonin',HTR4:'Serotonin',ADRA1B:'Adrenaline',ADRA2B:'Adrenaline',ADRA2C:'Adrenaline',ADRB2:'Adrenaline',DRD2:'Dopamine',Oxytocin:'Oxytocin',PACAP:'PACAP',GLP1:'Incretin'};
   const PLAT_MAP={'LNC1.0':'DoubleiLID(LNC1.0)','LNC2.0':'singleiLID(LNC2.0)'};
   const nextExp=existing.length;
   state.table1Data.forEach(d=>{
-    const cat=RECEPTOR_CAT[d.receptor]||'Other';
+    const cat=RECEPTOR_CAT[d.baseName||d.receptor]||'Other';
     const plat=PLAT_MAP[d.platform]||d.platform;
     const row=[cat,d.receptor,plat,nextExp];
     const conditions=getConditionLabels();
