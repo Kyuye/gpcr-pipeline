@@ -31,11 +31,232 @@ function computeGlobalYMax(tableData, includeCtrl) {
   return ceilYMax((m || 1) * HEADROOM_LAB);
 }
 
+function generateCombinedSVG(tableData, includeCtrl) {
+  if (!tableData || !tableData.length) return '';
+  const first = tableData[0];
+  const chartType = !first.isOpto ? 'non-opto' : (first.optoSystem === 'gpcr' ? 'gpcr' : 'opto-other');
+  const isNonOpto = (chartType === 'non-opto');
+  const isGpcr = (chartType === 'gpcr');
+
+  // Group by receptor key (one plasmid may have multiple platforms)
+  const plasmidMap = {}, plasmidOrder = [];
+  tableData.forEach(d => {
+    if (!plasmidMap[d.receptor]) {
+      plasmidMap[d.receptor] = {label: d.graphLabel || d.receptor, byPlat: {}};
+      plasmidOrder.push(d.receptor);
+    }
+    plasmidMap[d.receptor].byPlat[d.platform] = d;
+  });
+  const nPlasmids = plasmidOrder.length;
+
+  // Platforms present (canonical LNC order first)
+  const platSet = new Set(); tableData.forEach(d => platSet.add(d.platform));
+  const platforms = ['LNC1.0','LNC2.0'].filter(p => platSet.has(p));
+  tableData.forEach(d => { if (!platforms.includes(d.platform)) platforms.push(d.platform); });
+  if (!platforms.length) platforms.push('LNC1.0');
+
+  // Conditions to display (sorted: control, antagonist*, agonist*)
+  const condUnion = new Set();
+  tableData.forEach(d => { Object.keys(d.conditions||{}).forEach(c => condUnion.add(c)); });
+  const condCat = c => c.startsWith('control')?0 : c.startsWith('antagonist')?1 : c.startsWith('agonist')?2 : 3;
+  let condList = [...condUnion].sort((a,b) => condCat(a)-condCat(b));
+  if (!condList.length) condList = includeCtrl ? ['control','antagonist','agonist'] : ['antagonist','agonist'];
+  const condDisplay = condList.filter(c => includeCtrl || !c.startsWith('control'));
+  if (!condDisplay.length) condDisplay.push('agonist');
+
+  // Bar sizing scales down as plasmid count grows
+  const lightsPerCond = isNonOpto ? 1 : 2;
+  const nBarsPerPlatform = condDisplay.length * lightsPerCond;
+  const barW = nPlasmids <= 5 ? 4.5 : nPlasmids <= 10 ? 3.4 : nPlasmids <= 18 ? 2.6 : 2.0;
+  const step = barW / 0.60;
+  const platGap = platforms.length > 1 ? 2.5 : 0;
+  const plasmidGap = 7;
+  const plasmidPlotW = platforms.length * nBarsPerPlatform * step + (platforms.length - 1) * platGap;
+  const plotW = nPlasmids * plasmidPlotW + (nPlasmids - 1) * plasmidGap;
+
+  const ML = 26, MR = 10, MT = 14, MB = 44;
+  const W = Math.max(120, ML + plotW + MR);
+  const plotH = 65;
+  const H = MT + plotH + MB;
+
+  // Y max
+  let maxVal = 0;
+  tableData.forEach(d => {
+    Object.entries(d.conditions||{}).forEach(([cond, c]) => {
+      if (!c) return;
+      if (cond.startsWith('control') && !includeCtrl) return;
+      ['dark','blue','seap'].forEach(k => { if (typeof c[k] === 'number') maxVal = Math.max(maxVal, c[k]); });
+    });
+  });
+  const ym = ceilYMax((maxVal||1) * HEADROOM_LAB);
+
+  const pl = ML, pr = ML + plotW, pt = MT, pb = MT + plotH;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}mm" height="${H}mm" font-family="Arial, sans-serif" style="background:#fff">
+<defs>
+  <linearGradient id="gB" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#5B9BD5"/><stop offset="100%" stop-color="#EDF4FB"/></linearGradient>
+  <linearGradient id="gD" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#E8E8E8"/><stop offset="100%" stop-color="#333"/></linearGradient>
+</defs>`;
+
+  if (isGpcr) svg += renderLegendGpcr(W);
+  else if (chartType === 'opto-other') svg += renderLegendOptoSimple(W);
+
+  // Shared Y axis + grid
+  svg += `<text x="${pl-18}" y="${(pt+pb)/2}" font-size="3.2" fill="#333" text-anchor="middle" transform="rotate(-90,${pl-18},${(pt+pb)/2})">SEAP (Vmax)</text>`;
+  svg += `<line x1="${pl}" y1="${pt}" x2="${pl}" y2="${pb}" stroke="#333" stroke-width="0.2"/>`;
+  svg += `<line x1="${pl}" y1="${pb}" x2="${pr}" y2="${pb}" stroke="#333" stroke-width="0.2"/>`;
+  for (let i=0; i<=5; i++) {
+    const v=(ym/5)*i, ty=pb-(i/5)*plotH;
+    svg += `<text x="${pl-1.5}" y="${ty+0.7}" font-size="2.0" fill="#666" text-anchor="end">${v===0?'0':fmtYTick(v)}</text>`;
+    if (i>0 && i<5) svg += `<line x1="${pl}" y1="${ty}" x2="${pr}" y2="${ty}" stroke="#e0e0e0" stroke-width="0.1"/>`;
+  }
+
+  // Per-plasmid groups
+  plasmidOrder.forEach((recKey, pIdx) => {
+    const plasmid = plasmidMap[recKey];
+    const groupX = pl + pIdx * (plasmidPlotW + plasmidGap);
+    const barXAt = (plIdx, wi) => groupX + plIdx * (nBarsPerPlatform * step + platGap) + wi * step;
+    const barCXAt = (plIdx, wi) => barXAt(plIdx, wi) + step/2;
+
+    // Background bands (gpcr only)
+    if (isGpcr) {
+      platforms.forEach((plat, pi) => {
+        condDisplay.forEach((cond, ci) => {
+          const cat = cond.startsWith('antagonist') ? 'atg' : cond.startsWith('agonist') ? 'ag' : null;
+          if (!cat) return;
+          const fill = cat === 'atg' ? '#EBEBEB' : '#F8DFB1';
+          const sx = barXAt(pi, ci*lightsPerCond) - step*0.14;
+          const sw = step*lightsPerCond + step*0.28;
+          svg += `<rect x="${sx}" y="${pt}" width="${sw}" height="${plotH}" fill="${fill}"/>`;
+        });
+      });
+    }
+
+    // Platform dividers
+    for (let p=1; p<platforms.length; p++) {
+      const dx = barXAt(p, 0) - platGap/2;
+      svg += `<line x1="${dx}" y1="${pt}" x2="${dx}" y2="${pb}" stroke="#BCBCBB" stroke-width="0.1" stroke-dasharray="0.8,0.5"/>`;
+    }
+
+    // Group divider (between plasmids)
+    if (pIdx > 0) {
+      const gx = groupX - plasmidGap/2;
+      svg += `<line x1="${gx}" y1="${pt}" x2="${gx}" y2="${pb+1.2}" stroke="#9ca3af" stroke-width="0.15"/>`;
+    }
+
+    // Bars
+    const topY = {};
+    platforms.forEach((plat, pi) => {
+      const d = plasmid.byPlat[plat];
+      condDisplay.forEach((cond, ci) => {
+        const c = d?.conditions?.[cond];
+        if (isNonOpto) {
+          const wi = ci, sv = c?.seap || 0;
+          const bH = ym>0 ? (sv/ym)*plotH : 0;
+          const x = barXAt(pi, wi) + (step-barW)/2;
+          topY[`${pi}-${wi}`] = bH>0 ? (pb-bH) : pb;
+          if (bH>0) svg += `<rect x="${x}" y="${pb-bH}" width="${barW}" height="${bH}" fill="url(#gB)" stroke="#444" stroke-width="0.1"/>`;
+        } else {
+          const wiD=ci*2, wiB=ci*2+1, dv=c?.dark||0, bv=c?.blue||0;
+          const bHD = ym>0 ? (dv/ym)*plotH : 0;
+          const bHB = ym>0 ? (bv/ym)*plotH : 0;
+          const xD = barXAt(pi, wiD) + (step-barW)/2;
+          const xB = barXAt(pi, wiB) + (step-barW)/2;
+          topY[`${pi}-${wiD}`] = bHD>0 ? (pb-bHD) : pb;
+          topY[`${pi}-${wiB}`] = bHB>0 ? (pb-bHB) : pb;
+          if (bHD>0) svg += `<rect x="${xD}" y="${pb-bHD}" width="${barW}" height="${bHD}" fill="url(#gD)" stroke="#444" stroke-width="0.1"/>`;
+          if (bHB>0) svg += `<rect x="${xB}" y="${pb-bHB}" width="${barW}" height="${bHB}" fill="url(#gB)" stroke="#444" stroke-width="0.1"/>`;
+        }
+      });
+    });
+
+    // Fold brackets
+    const lvSpacing=4.0, lvOffset=2.5, foldFont=2.6;
+    if (isGpcr) {
+      platforms.forEach((plat, pi) => {
+        const d = plasmid.byPlat[plat]; if (!d?.ratios) return;
+        const ratios = d.ratios;
+        const atgPos = condDisplay.findIndex(c => c.startsWith('antagonist'));
+        const agPos  = condDisplay.findIndex(c => c.startsWith('agonist'));
+        const ctrlPos= condDisplay.findIndex(c => c.startsWith('control'));
+        const tD=atgPos>=0?atgPos*2:-1, tB=atgPos>=0?atgPos*2+1:-1;
+        const aD=agPos>=0?agPos*2:-1, aB=agPos>=0?agPos*2+1:-1;
+        const cD=ctrlPos>=0?ctrlPos*2:-1, cB=ctrlPos>=0?ctrlPos*2+1:-1;
+        const pairs=[];
+        if (tD>=0&&aB>=0) pairs.push({l:'AG-B/ATG-D',c:'#d32f2f',f:tD,t:aB});
+        if (tB>=0&&aB>=0) pairs.push({l:'AG-B/ATG-B',c:'#1976d2',f:tB,t:aB});
+        if (atgPos<0&&cD>=0&&aB>=0) pairs.push({l:'AG-B/CTRL-D',c:'#d32f2f',f:cD,t:aB});
+        if (atgPos<0&&cB>=0&&aB>=0) pairs.push({l:'AG-B/CTRL-B',c:'#1976d2',f:cB,t:aB});
+        if (aD>=0&&aB>=0) pairs.push({l:'AG-B/AG-D',c:'#388e3c',f:aD,t:aB});
+        const gWis=[]; if(tD>=0)gWis.push(tD,tB); if(aD>=0)gWis.push(aD,aB); if(atgPos<0&&cD>=0)gWis.push(cD,cB);
+        const gTop = gWis.length ? Math.min(...gWis.map(wi=>topY[`${pi}-${wi}`]??pb)) : pb;
+        pairs.forEach((bp, idx) => {
+          const r = ratios[bp.l]||0; if (!r) return;
+          const by = gTop - lvOffset - idx*lvSpacing;
+          const cf=barCXAt(pi,bp.f), ct=barCXAt(pi,bp.t);
+          const yf=topY[`${pi}-${bp.f}`]??pb, yt=topY[`${pi}-${bp.t}`]??pb;
+          svg += `<polyline points="${cf},${yf} ${cf},${by} ${ct},${by} ${ct},${yt}" fill="none" stroke="${bp.c}" stroke-width="0.15"/>`;
+          const mx=(cf+ct)/2, fs=r>=100?Math.round(r)+'x':r.toFixed(1)+'x';
+          svg += `<text x="${mx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-weight="bold" font-size="${foldFont}" fill="${bp.c}">${fs}</text>`;
+        });
+      });
+    } else if (chartType === 'opto-other') {
+      platforms.forEach((plat, pi) => {
+        const d = plasmid.byPlat[plat]; if (!d) return;
+        condDisplay.forEach((cond, ci) => {
+          const c = d?.conditions?.[cond];
+          const dv=c?.dark||0, bv=c?.blue||0;
+          if (!dv || !bv) return;
+          const fold=bv/dv, wiD=ci*2, wiB=ci*2+1;
+          const cf=barCXAt(pi,wiD), ct=barCXAt(pi,wiB);
+          const yf=topY[`${pi}-${wiD}`]??pb, yt=topY[`${pi}-${wiB}`]??pb;
+          const by=Math.min(yf,yt) - lvOffset;
+          svg += `<polyline points="${cf},${yf} ${cf},${by} ${ct},${by} ${ct},${yt}" fill="none" stroke="#1976d2" stroke-width="0.15"/>`;
+          const mx=(cf+ct)/2, fs=fold>=100?Math.round(fold)+'x':fold.toFixed(1)+'x';
+          svg += `<text x="${mx}" y="${by}" text-anchor="middle" dominant-baseline="central" font-weight="bold" font-size="${foldFont}" fill="#1976d2">${fs}</text>`;
+        });
+      });
+    }
+
+    // X-axis bar labels (Dark/Blue mini-labels only when bar wide enough)
+    const xLY = pb + 2.0;
+    if (!isNonOpto && barW >= 3.0) {
+      for (let pi=0; pi<platforms.length; pi++) {
+        for (let wi=0; wi<nBarsPerPlatform; wi++) {
+          svg += `<text x="${barCXAt(pi,wi)}" y="${xLY}" font-size="1.2" fill="#666" text-anchor="middle">${wi%2===0?'D':'B'}</text>`;
+        }
+      }
+    }
+
+    // Platform brackets + labels
+    const platLY = (!isNonOpto && barW >= 3.0) ? xLY + 2.5 : xLY;
+    platforms.forEach((plat, pi) => {
+      const lL = barXAt(pi, 0) + step*0.1;
+      const lR = barXAt(pi, nBarsPerPlatform-1) + step*0.9;
+      svg += bracketDown(lL, lR, platLY - 0.5, 0.5);
+      svg += `<text x="${(lL+lR)/2}" y="${platLY + 2.0}" font-size="1.6" fill="#333" text-anchor="middle">${plat}</text>`;
+    });
+
+    // Plasmid name centered under group (2-line via splitLabel)
+    const plasmidLY = platLY + 5.0;
+    const gcx = groupX + plasmidPlotW / 2;
+    const lp = splitLabel(plasmid.label);
+    svg += `<text x="${gcx}" y="${plasmidLY}" font-size="2.0" fill="#1a1a2e" text-anchor="middle" font-weight="600">${lp.line1}</text>`;
+    if (lp.line2) svg += `<text x="${gcx}" y="${plasmidLY + 2.4}" font-size="2.0" fill="#1a1a2e" text-anchor="middle" font-weight="600">${lp.line2}</text>`;
+  });
+
+  svg += '</svg>';
+  return svg;
+}
+
 function generateSVG(tableData, vizMode, ctrlMode, chartFormat) {
   const W = 210, ML = 7, MR = 7, MT = 9, MB = 3, GAP = 3.5, COLS = 4;
   const includeCtrl = (ctrlMode === 'include');
   _isLab = (chartFormat === 'lab-meeting');
   _globalYMax = _isLab ? computeGlobalYMax(tableData, includeCtrl) : 0;
+
+  // Lab-meeting: single combined chart with shared X/Y axes
+  if (_isLab) return generateCombinedSVG(tableData, includeCtrl);
 
   // Determine chart type from first entry
   const first = tableData[0] || {};
