@@ -126,22 +126,30 @@ function panelGpcr(gpcr, recData, ox, oy, pw, ph, includeCtrl, graphLabel, platf
   const pl=ox+5.8,pr=ox+pw-0.6,pt=oy+1.0,pb=oy+ph-10.0;
   const plotW=pr-pl,plotH=pb-pt; if(plotH<=0)return s;
 
+  // Determine condition categories actually present in this receptor's data
+  const condUnion=new Set();
+  if(recData){Object.values(recData).forEach(d=>{Object.keys(d.conditions||{}).forEach(c=>condUnion.add(c));});}
+  const condCat=c=>c.startsWith('control')?0:c.startsWith('antagonist')?1:c.startsWith('agonist')?2:3;
+  let condList=[...condUnion].sort((a,b)=>condCat(a)-condCat(b));
+  // Fallback layout for empty panels
+  if(!condList.length) condList = includeCtrl?['control','antagonist','agonist']:['antagonist','agonist'];
+  const condDisplay=condList.filter(c=>includeCtrl||!c.startsWith('control'));
+  if(!condDisplay.length) condDisplay.push('agonist');
+
   const nPlat=platforms.length;
-  const nPG=includeCtrl?6:4, totalBars=nPG*nPlat;
+  const nPG=condDisplay.length*2, totalBars=nPG*nPlat;
   const gapMid=nPlat>1?2.5:0, totalGap=gapMid*(nPlat-1);
   const step=(plotW-totalGap)/totalBars, barW=step*0.72;
 
   const bars=[],barValues=[];
   platforms.forEach((plat,pi)=>{const bo=pi*nPG;
-    if(!recData||!recData[plat]){for(let i=0;i<nPG;i++)bars.push({idx:bo+i,value:0,type:i%2===0?'dark':'blue'});}
-    else{const d=recData[plat],conds=Object.keys(d.conditions);
-      const ctrlC=conds.find(c=>c.startsWith('control')),atgC=conds.find(c=>c.startsWith('antagonist')),agC=conds.find(c=>c.startsWith('agonist'));
-      let bi=bo;
-      if(includeCtrl){const cD=ctrlC?(d.conditions[ctrlC]?.dark||0):0,cB=ctrlC?(d.conditions[ctrlC]?.blue||0):0;bars.push({idx:bi++,value:cD,type:'dark'},{idx:bi++,value:cB,type:'blue'});barValues.push(cD,cB);}
-      const tD=atgC?(d.conditions[atgC]?.dark||0):0,tB=atgC?(d.conditions[atgC]?.blue||0):0;bars.push({idx:bi++,value:tD,type:'dark'},{idx:bi++,value:tB,type:'blue'});
-      const aD=agC?(d.conditions[agC]?.dark||0):0,aB=agC?(d.conditions[agC]?.blue||0):0;bars.push({idx:bi++,value:aD,type:'dark'},{idx:bi++,value:aB,type:'blue'});
-      barValues.push(tD,tB,aD,aB);
-    }
+    let bi=bo;
+    condDisplay.forEach(cond=>{
+      const c=recData?.[plat]?.conditions?.[cond];
+      const dv=c?.dark||0, bv=c?.blue||0;
+      bars.push({idx:bi++,value:dv,type:'dark'},{idx:bi++,value:bv,type:'blue'});
+      if(!cond.startsWith('control')) barValues.push(dv,bv);
+    });
   });
 
   const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((barValues.length>0?Math.max(...barValues):1)*1.25);
@@ -150,10 +158,14 @@ function panelGpcr(gpcr, recData, ox, oy, pw, ph, includeCtrl, graphLabel, platf
   const barX=idx=>pl+idx*step+Math.floor(idx/nPG)*gapMid;
   const barCX=idx=>barX(idx)+step/2;
 
-  // Background bands (per platform group)
+  // Background bands per condition category (control: none, antagonist: gray, agonist: orange)
   for(let p=0;p<nPlat;p++){const base=p*nPG;
-    if(includeCtrl){s+=`<rect x="${barX(base+2)-step*0.14}" y="${pt}" width="${step*2+step*0.28}" height="${plotH}" fill="#EBEBEB"/>`;s+=`<rect x="${barX(base+4)-step*0.14}" y="${pt}" width="${step*2+step*0.28}" height="${plotH}" fill="#F8DFB1"/>`;}
-    else{s+=`<rect x="${barX(base)-step*0.14}" y="${pt}" width="${step*2+step*0.28}" height="${plotH}" fill="#EBEBEB"/>`;s+=`<rect x="${barX(base+2)-step*0.14}" y="${pt}" width="${step*2+step*0.28}" height="${plotH}" fill="#F8DFB1"/>`;}
+    condDisplay.forEach((cond,ci)=>{
+      const cat=cond.startsWith('antagonist')?'atg':cond.startsWith('agonist')?'ag':null;
+      if(!cat)return;
+      const fill=cat==='atg'?'#EBEBEB':'#F8DFB1';
+      s+=`<rect x="${barX(base+ci*2)-step*0.14}" y="${pt}" width="${step*2+step*0.28}" height="${plotH}" fill="${fill}"/>`;
+    });
   }
 
   // Platform dividers
@@ -163,15 +175,26 @@ function panelGpcr(gpcr, recData, ox, oy, pw, ph, includeCtrl, graphLabel, platf
   const barTopY={};
   bars.forEach(bar=>{const x=barX(bar.idx)+(step-barW)/2,bH=ym>0?(bar.value/ym)*plotH:0;barTopY[bar.idx]=bH>0?(pb-bH):pb;if(bH>0)s+=`<rect x="${x}" y="${pb-bH}" width="${barW}" height="${bH}" fill="${bar.type==='dark'?'url(#gD)':'url(#gB)'}" stroke="#444" stroke-width="0.088"/>`;});
 
-  // Fold brackets
+  // Fold brackets — only applicable ones
   let bLines='';const fGroups=[];
   const lvSpacing=_isLab?4.0:2.0, lvOffset=_isLab?2.5:1.2, foldFont=_isLab?2.6:0.882;
   if(recData){platforms.forEach((plat,pi)=>{if(!recData[plat]?.ratios)return;const ratios=recData[plat].ratios,base=pi*nPG;
-    const tDI=includeCtrl?base+2:base,tBI=includeCtrl?base+3:base+1,aDI=includeCtrl?base+4:base+2,aBI=includeCtrl?base+5:base+3;
-    const pairs=[{l:'AG-B/ATG-D',c:'#d32f2f',f:tDI,t:aBI,lv:0},{l:'AG-B/ATG-B',c:'#1976d2',f:tBI,t:aBI,lv:1},{l:'AG-B/AG-D',c:'#388e3c',f:aDI,t:aBI,lv:2}];
-    const gBars=includeCtrl?[base+2,base+3,base+4,base+5]:[base,base+1,base+2,base+3];
-    const gTop=Math.min(...gBars.map(i=>barTopY[i]??pb));
-    pairs.forEach(bp=>{const r=ratios[bp.l]||0;if(!r)return;const by=gTop-lvOffset-bp.lv*lvSpacing,cf=barCX(bp.f),ct=barCX(bp.t),yf=barTopY[bp.f]??pb,yt=barTopY[bp.t]??pb;
+    const atgPos=condDisplay.findIndex(c=>c.startsWith('antagonist'));
+    const agPos=condDisplay.findIndex(c=>c.startsWith('agonist'));
+    const ctrlPos=condDisplay.findIndex(c=>c.startsWith('control'));
+    const tDI=atgPos>=0?base+atgPos*2:-1, tBI=atgPos>=0?base+atgPos*2+1:-1;
+    const aDI=agPos>=0?base+agPos*2:-1, aBI=agPos>=0?base+agPos*2+1:-1;
+    const cDI=ctrlPos>=0?base+ctrlPos*2:-1, cBI=ctrlPos>=0?base+ctrlPos*2+1:-1;
+    const pairs=[];
+    if(tDI>=0&&aBI>=0) pairs.push({l:'AG-B/ATG-D',c:'#d32f2f',f:tDI,t:aBI});
+    if(tBI>=0&&aBI>=0) pairs.push({l:'AG-B/ATG-B',c:'#1976d2',f:tBI,t:aBI});
+    // Fallback to control as baseline when no antagonist (chimera screening)
+    if(atgPos<0 && cDI>=0 && aBI>=0) pairs.push({l:'AG-B/CTRL-D',c:'#d32f2f',f:cDI,t:aBI});
+    if(atgPos<0 && cBI>=0 && aBI>=0) pairs.push({l:'AG-B/CTRL-B',c:'#1976d2',f:cBI,t:aBI});
+    if(aDI>=0&&aBI>=0) pairs.push({l:'AG-B/AG-D',c:'#388e3c',f:aDI,t:aBI});
+    const gBars=[]; if(tDI>=0)gBars.push(tDI,tBI); if(aDI>=0)gBars.push(aDI,aBI); if(atgPos<0&&cDI>=0)gBars.push(cDI,cBI);
+    const gTop=gBars.length?Math.min(...gBars.map(i=>barTopY[i]??pb)):pb;
+    pairs.forEach((bp,i)=>{const r=ratios[bp.l]||0;if(!r)return;const by=gTop-lvOffset-i*lvSpacing,cf=barCX(bp.f),ct=barCX(bp.t),yf=barTopY[bp.f]??pb,yt=barTopY[bp.t]??pb;
       bLines+=`<polyline points="${cf},${yf} ${cf},${by} ${ct},${by} ${ct},${yt}" fill="none" stroke="${bp.c}" stroke-width="0.088"/>`;
       const mx=(cf+ct)/2,fs=r>=100?Math.round(r)+'x':r.toFixed(1)+'x';
       if(_isLab){
@@ -330,5 +353,76 @@ function splitLabel(label){
   return{line1:label,line2:null};
 }
 function bracketDown(x1,x2,y,h){return`<path d="M${x1},${y} L${x1},${y+h} L${x2},${y+h} L${x2},${y}" fill="none" stroke="#333" stroke-width="0.088"/>`;}
+function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function generateRankingSVG(tableData){
+  if(!tableData||!tableData.length) return '';
+  const opto = !!tableData[0].isOpto;
+
+  // Build per-fold (or per-condition for non-opto) chart specs
+  const charts = [];
+  if(opto){
+    const foldKeys = new Set();
+    tableData.forEach(d => { if(d.ratios) Object.keys(d.ratios).forEach(k => foldKeys.add(k)); });
+    [...foldKeys].forEach(key => {
+      const rows = tableData.map(d => ({
+        label: d.graphLabel || d.receptor,
+        platform: d.platform,
+        value: d.ratios?.[key] || 0
+      })).sort((a,b) => b.value - a.value);
+      charts.push({title: key, unit: 'x', rows});
+    });
+  } else {
+    const conds = Object.keys(tableData[0].conditions || {});
+    conds.forEach(cond => {
+      const rows = tableData.map(d => ({
+        label: d.graphLabel || d.receptor,
+        platform: d.platform,
+        value: d.conditions?.[cond]?.seap || 0
+      })).sort((a,b) => b.value - a.value);
+      charts.push({title: cond+' SEAP', unit: '', rows});
+    });
+  }
+  if(!charts.length) return '';
+
+  // Layout
+  const W = 210;
+  const padding = 6;
+  const titleH = 7;
+  const rowH = 5;
+  const labelW = 80;
+  const barAreaW = W - padding*2 - labelW - 14;
+
+  let H = padding;
+  charts.forEach(c => { H += titleH + c.rows.length*rowH + padding*1.5; });
+  H += padding;
+
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}mm" height="${H}mm" font-family="Arial, sans-serif" style="background:#fff">`;
+
+  let y = padding;
+  charts.forEach(c => {
+    svg += `<text x="${padding}" y="${y+titleH-1.5}" font-size="3.5" font-weight="bold" fill="#1a1a2e">Ranking by ${escXml(c.title)} — higher is better</text>`;
+    y += titleH;
+    const maxVal = Math.max(...c.rows.map(r=>r.value), 0.001);
+    c.rows.forEach((r,i) => {
+      const rowY = y + i*rowH;
+      const labelText = `${i+1}. ${r.label} (${r.platform})`;
+      svg += `<text x="${padding}" y="${rowY+rowH/2+1}" font-size="2.2" fill="#333">${escXml(labelText)}</text>`;
+      const barX = padding + labelW;
+      const barW = r.value > 0 ? (r.value/maxVal)*barAreaW : 0;
+      if(barW > 0){
+        const fill = r.platform === 'LNC2.0' ? '#10b981' : '#3b82f6';
+        svg += `<rect x="${barX}" y="${rowY+0.5}" width="${barW}" height="${rowH-1}" fill="${fill}" stroke="#1e40af" stroke-width="0.1"/>`;
+      }
+      const valStr = c.unit === 'x'
+        ? (r.value >= 100 ? Math.round(r.value)+'x' : r.value.toFixed(1)+'x')
+        : (r.value >= 1000 ? (r.value/1000).toFixed(1)+'k' : r.value.toFixed(0));
+      svg += `<text x="${barX + barW + 1}" y="${rowY+rowH/2+1}" font-size="2.2" font-weight="bold" fill="#333">${valStr}</text>`;
+    });
+    y += c.rows.length*rowH + padding*1.5;
+  });
+  svg += '</svg>';
+  return svg;
+}
 function ceilYMax(m){if(m<=0)return 1;if(m<=2)return Math.ceil(m*2)/2;if(m<=5)return Math.ceil(m);if(m<=10)return Math.ceil(m/2)*2;if(m<=50)return Math.ceil(m/10)*10;if(m<=100)return Math.ceil(m/20)*20;if(m<=500)return Math.ceil(m/100)*100;if(m<=1000)return Math.ceil(m/200)*200;if(m<=2000)return Math.ceil(m/400)*400;if(m<=5000)return Math.ceil(m/1000)*1000;return Math.ceil(m/2000)*2000;}
 function fmtYTick(v){if(v>=1000)return(v/1000).toFixed(v%1000===0?0:1)+'k';if(Number.isInteger(v))return v.toString();return v.toFixed(1);}
