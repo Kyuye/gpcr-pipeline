@@ -14,6 +14,7 @@ const GPCR_FULL_ORDER = [
 const DISPLAY_NAME = { 'PACAP':'ADCYAP1', 'Oxytocin':'Oxytocin', 'GLP1':'GLP1R' };
 
 let _isLab = false, _globalYMax = 0;
+const HEADROOM_LAB = 1.5, HEADROOM_PAPER = 1.25;
 
 function computeGlobalYMax(tableData, includeCtrl) {
   let m = 0;
@@ -27,7 +28,7 @@ function computeGlobalYMax(tableData, includeCtrl) {
       if (typeof c.seap === 'number') m = Math.max(m, c.seap);
     });
   });
-  return ceilYMax((m || 1) * 1.25);
+  return ceilYMax((m || 1) * HEADROOM_LAB);
 }
 
 function generateSVG(tableData, vizMode, ctrlMode, chartFormat) {
@@ -139,7 +140,7 @@ function panelGpcr(gpcr, recData, ox, oy, pw, ph, includeCtrl, graphLabel, platf
   const nPlat=platforms.length;
   const nPG=condDisplay.length*2, totalBars=nPG*nPlat;
   const gapMid=nPlat>1?2.5:0, totalGap=gapMid*(nPlat-1);
-  const step=(plotW-totalGap)/totalBars, barW=step*0.72;
+  const step=(plotW-totalGap)/totalBars, barW=step*0.60;
 
   const bars=[],barValues=[];
   platforms.forEach((plat,pi)=>{const bo=pi*nPG;
@@ -152,7 +153,7 @@ function panelGpcr(gpcr, recData, ox, oy, pw, ph, includeCtrl, graphLabel, platf
     });
   });
 
-  const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((barValues.length>0?Math.max(...barValues):1)*1.25);
+  const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((barValues.length>0?Math.max(...barValues):1)*HEADROOM_PAPER);
   s+=renderAxes(ox,pl,pr,pt,pb,plotH,ym);
 
   const barX=idx=>pl+idx*step+Math.floor(idx/nPG)*gapMid;
@@ -243,7 +244,7 @@ function panelOptoSimple(gpcr, recData, ox, oy, pw, ph, graphLabel, platforms) {
   const nPG=condNames.length*nPerCond||2;
   const totalBars=nPG*nPlat;
   const gapMid=nPlat>1?2.5:0, totalGap=gapMid*(nPlat-1);
-  const step=(plotW-totalGap)/totalBars,barW=step*0.72;
+  const step=(plotW-totalGap)/totalBars,barW=step*0.60;
 
   const bars=[],barValues=[],foldPairs=[];
   platforms.forEach((plat,pi)=>{const bo=pi*nPG;
@@ -259,7 +260,7 @@ function panelOptoSimple(gpcr, recData, ox, oy, pw, ph, graphLabel, platforms) {
     }
   });
 
-  const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((barValues.length>0?Math.max(...barValues):1)*1.25);
+  const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((barValues.length>0?Math.max(...barValues):1)*HEADROOM_PAPER);
   s+=renderAxes(ox,pl,pr,pt,pb,plotH,ym);
 
   const barX=idx=>pl+idx*step+Math.floor(idx/nPG)*gapMid;
@@ -324,9 +325,9 @@ function panelNonOpto(gpcr, recData, ox, oy, pw, ph, graphLabel) {
   let conditions=[],vals=[];
   if(recData){const fp=Object.keys(recData)[0];if(fp&&recData[fp]){const d=recData[fp];conditions=Object.keys(d.conditions);vals=conditions.map(c=>d.conditions[c]?.seap||0);}}
   const nBars=conditions.length||1;
-  const step=plotW/nBars,barW=step*0.65;
+  const step=plotW/nBars,barW=step*0.55;
 
-  const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((vals.length>0?Math.max(...vals):1)*1.25);
+  const ym=(_isLab && _globalYMax>0) ? _globalYMax : ceilYMax((vals.length>0?Math.max(...vals):1)*HEADROOM_PAPER);
   s+=renderAxes(ox,pl,pr,pt,pb,plotH,ym);
 
   // No background — white only
@@ -355,72 +356,107 @@ function splitLabel(label){
 function bracketDown(x1,x2,y,h){return`<path d="M${x1},${y} L${x1},${y+h} L${x2},${y+h} L${x2},${y}" fill="none" stroke="#333" stroke-width="0.088"/>`;}
 function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
-function generateRankingSVG(tableData){
+function generateRankingSVG(tableData, chartFormat){
   if(!tableData||!tableData.length) return '';
   const opto = !!tableData[0].isOpto;
+  const isLab = (chartFormat === 'lab-meeting');
 
-  // Build per-fold (or per-condition for non-opto) chart specs
-  const charts = [];
+  // Build metric specs: {title, ylabel, isFold, getValue}
+  const metrics = [];
   if(opto){
+    metrics.push({
+      title: 'AG-Blue SEAP (Activated signal)',
+      ylabel: 'SEAP (Vmax)',
+      isFold: false,
+      getValue: d => {
+        const agK = Object.keys(d.conditions||{}).find(c => c.startsWith('agonist'));
+        return agK ? (d.conditions[agK]?.blue || 0) : 0;
+      }
+    });
     const foldKeys = new Set();
     tableData.forEach(d => { if(d.ratios) Object.keys(d.ratios).forEach(k => foldKeys.add(k)); });
     [...foldKeys].forEach(key => {
-      const rows = tableData.map(d => ({
-        label: d.graphLabel || d.receptor,
-        platform: d.platform,
-        value: d.ratios?.[key] || 0
-      })).sort((a,b) => b.value - a.value);
-      charts.push({title: key, unit: 'x', rows});
+      metrics.push({title: key+' (fold)', ylabel: 'Fold (x)', isFold: true, getValue: d => d.ratios?.[key] || 0});
     });
   } else {
     const conds = Object.keys(tableData[0].conditions || {});
-    conds.forEach(cond => {
-      const rows = tableData.map(d => ({
-        label: d.graphLabel || d.receptor,
-        platform: d.platform,
-        value: d.conditions?.[cond]?.seap || 0
-      })).sort((a,b) => b.value - a.value);
-      charts.push({title: cond+' SEAP', unit: '', rows});
+    conds.forEach(c => {
+      metrics.push({title: c+' SEAP', ylabel: 'SEAP (Vmax)', isFold: false, getValue: d => d.conditions[c]?.seap || 0});
     });
   }
-  if(!charts.length) return '';
+  if(!metrics.length) return '';
 
   // Layout
-  const W = 210;
-  const padding = 6;
-  const titleH = 7;
-  const rowH = 5;
-  const labelW = 80;
-  const barAreaW = W - padding*2 - labelW - 14;
+  const W = 210, padding = 8;
+  const titleH = 7, plotH = 45, xLabelH = 22, sectionGap = 6;
+  const H = padding + metrics.length * (titleH + plotH + xLabelH + sectionGap) + padding;
 
-  let H = padding;
-  charts.forEach(c => { H += titleH + c.rows.length*rowH + padding*1.5; });
-  H += padding;
-
-  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}mm" height="${H}mm" font-family="Arial, sans-serif" style="background:#fff">`;
+  let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}mm" height="${H}mm" font-family="Arial, sans-serif" style="background:#fff">
+<defs>
+  <linearGradient id="rB" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#5B9BD5"/><stop offset="100%" stop-color="#EDF4FB"/></linearGradient>
+  <linearGradient id="rG" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#10b981"/><stop offset="100%" stop-color="#D1FAE5"/></linearGradient>
+</defs>`;
 
   let y = padding;
-  charts.forEach(c => {
-    svg += `<text x="${padding}" y="${y+titleH-1.5}" font-size="3.5" font-weight="bold" fill="#1a1a2e">Ranking by ${escXml(c.title)} — higher is better</text>`;
+  metrics.forEach(metric => {
+    const rows = tableData.map(d => ({
+      label: d.graphLabel || d.receptor,
+      platform: d.platform,
+      value: metric.getValue(d)
+    })).sort((a,b) => b.value - a.value);
+
+    // Title
+    svg += `<text x="${padding}" y="${y+titleH-1}" font-size="3.2" font-weight="bold" fill="#1a1a2e">${escXml(metric.title)} — higher is better</text>`;
     y += titleH;
-    const maxVal = Math.max(...c.rows.map(r=>r.value), 0.001);
-    c.rows.forEach((r,i) => {
-      const rowY = y + i*rowH;
-      const labelText = `${i+1}. ${r.label} (${r.platform})`;
-      svg += `<text x="${padding}" y="${rowY+rowH/2+1}" font-size="2.2" fill="#333">${escXml(labelText)}</text>`;
-      const barX = padding + labelW;
-      const barW = r.value > 0 ? (r.value/maxVal)*barAreaW : 0;
-      if(barW > 0){
-        const fill = r.platform === 'LNC2.0' ? '#10b981' : '#3b82f6';
-        svg += `<rect x="${barX}" y="${rowY+0.5}" width="${barW}" height="${rowH-1}" fill="${fill}" stroke="#1e40af" stroke-width="0.1"/>`;
+
+    // Plot area
+    const pl = padding + 14, pr = W - padding - 2, pt = y, pb = y + plotH;
+    const plotW = pr - pl;
+
+    const maxVal = Math.max(...rows.map(r => r.value), 0.001);
+    const ym = ceilYMax(maxVal * (isLab ? HEADROOM_LAB : HEADROOM_PAPER));
+
+    // Y-axis label
+    svg += `<text x="${pl-9}" y="${(pt+pb)/2}" font-size="2.117" fill="#333" text-anchor="middle" transform="rotate(-90,${pl-9},${(pt+pb)/2})">${metric.ylabel}</text>`;
+
+    // Axes + grid
+    svg += `<line x1="${pl}" y1="${pt}" x2="${pl}" y2="${pb}" stroke="#333" stroke-width="0.088"/>`;
+    svg += `<line x1="${pl}" y1="${pb}" x2="${pr}" y2="${pb}" stroke="#333" stroke-width="0.088"/>`;
+    for(let i=0;i<=5;i++){
+      const v=(ym/5)*i, ty=pb-(i/5)*plotH;
+      const lbl = metric.isFold ? (v >= 100 ? Math.round(v)+'x' : (v===0?'0':v.toFixed(1)+'x')) : (v===0?'0':fmtYTick(v));
+      svg += `<text x="${pl-1}" y="${ty+0.5}" font-size="1.4" fill="#666" text-anchor="end">${lbl}</text>`;
+      if(i>0 && i<5) svg += `<line x1="${pl}" y1="${ty}" x2="${pr}" y2="${ty}" stroke="#e0e0e0" stroke-width="0.088"/>`;
+    }
+
+    // Bars (vertical)
+    const nBars = rows.length;
+    const step = plotW / nBars;
+    const barW = step * 0.60;
+    const xLabelFont = nBars > 18 ? 1.0 : nBars > 12 ? 1.2 : 1.4;
+    const valLabelFont = isLab ? 1.6 : 1.2;
+
+    rows.forEach((r,i) => {
+      const cx = pl + i*step + step/2;
+      const x = cx - barW/2;
+      const bH = ym > 0 ? (r.value / ym) * plotH : 0;
+      if(bH > 0){
+        const fill = r.platform === 'LNC2.0' ? 'url(#rG)' : 'url(#rB)';
+        svg += `<rect x="${x}" y="${pb-bH}" width="${barW}" height="${bH}" fill="${fill}" stroke="#444" stroke-width="0.088"/>`;
+        const valStr = metric.isFold
+          ? (r.value >= 100 ? Math.round(r.value)+'x' : r.value.toFixed(1)+'x')
+          : (r.value >= 1000 ? (r.value/1000).toFixed(1)+'k' : r.value.toFixed(0));
+        svg += `<text x="${cx}" y="${pb-bH-0.6}" font-size="${valLabelFont}" text-anchor="middle" font-weight="bold" fill="#333">${valStr}</text>`;
       }
-      const valStr = c.unit === 'x'
-        ? (r.value >= 100 ? Math.round(r.value)+'x' : r.value.toFixed(1)+'x')
-        : (r.value >= 1000 ? (r.value/1000).toFixed(1)+'k' : r.value.toFixed(0));
-      svg += `<text x="${barX + barW + 1}" y="${rowY+rowH/2+1}" font-size="2.2" font-weight="bold" fill="#333">${valStr}</text>`;
+      // X label: rank. name (platform), rotated -45°
+      const lh = pb + 1.5;
+      const labelText = `${i+1}. ${r.label}${r.platform?' ('+r.platform+')':''}`;
+      svg += `<text x="${cx}" y="${lh}" font-size="${xLabelFont}" fill="#333" text-anchor="end" transform="rotate(-45,${cx},${lh})">${escXml(labelText)}</text>`;
     });
-    y += c.rows.length*rowH + padding*1.5;
+
+    y = pb + xLabelH + sectionGap;
   });
+
   svg += '</svg>';
   return svg;
 }

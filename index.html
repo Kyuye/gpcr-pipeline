@@ -270,9 +270,30 @@
           <h2>결과물 다운로드</h2>
           <p>모든 분석이 완료되었습니다.</p>
           <div class="download-grid">
-            <div class="download-card"><div class="dl-icon">📊</div><h3>SVG 그래프</h3><p>Bar Chart</p><button class="btn btn-primary" id="btn-download-svg">다운로드</button></div>
-            <div class="download-card"><div class="dl-icon">🏆</div><h3>Ranking SVG</h3><p>폴드별 플라스미드 순위</p><button class="btn btn-primary" id="btn-download-ranking-svg">다운로드</button></div>
-            <div class="download-card"><div class="dl-icon">📋</div><h3>엑셀 파일</h3><p>Raw + 표1 + 표2 + Ranking</p><button class="btn btn-primary" id="btn-download-excel">다운로드</button></div>
+            <div class="download-card">
+              <div class="dl-icon">📊</div>
+              <h3>그래프</h3>
+              <p>Bar Chart</p>
+              <div style="display:flex;gap:6px;justify-content:center;margin-top:8px;">
+                <button class="btn btn-primary" id="btn-download-svg" style="padding:6px 14px;font-size:12px;">SVG</button>
+                <button class="btn btn-secondary" id="btn-download-svg-png" style="padding:6px 14px;font-size:12px;">PNG</button>
+              </div>
+            </div>
+            <div class="download-card">
+              <div class="dl-icon">🏆</div>
+              <h3>Ranking 차트</h3>
+              <p>폴드별 플라스미드 순위</p>
+              <div style="display:flex;gap:6px;justify-content:center;margin-top:8px;">
+                <button class="btn btn-primary" id="btn-download-ranking-svg" style="padding:6px 14px;font-size:12px;">SVG</button>
+                <button class="btn btn-secondary" id="btn-download-ranking-png" style="padding:6px 14px;font-size:12px;">PNG</button>
+              </div>
+            </div>
+            <div class="download-card">
+              <div class="dl-icon">📋</div>
+              <h3>엑셀 파일</h3>
+              <p>Raw + 표1 + 표2 + Ranking</p>
+              <button class="btn btn-primary" id="btn-download-excel" style="margin-top:8px;">다운로드</button>
+            </div>
           </div>
 
           <!-- 2차: 마스터 파일 업데이트 -->
@@ -314,7 +335,7 @@
     </div>
   </div>
 
-  <script src="chart.js?v=20260621e"></script>
-  <script src="app.js?v=20260621e"></script>
+  <script src="chart.js?v=20260621g"></script>
+  <script src="app.js?v=20260621g"></script>
 </body>
 </html>

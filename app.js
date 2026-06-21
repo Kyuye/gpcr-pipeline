@@ -334,7 +334,7 @@ function renderAT(tid,data,rd){
 function renderChart(){
   if(!state.table1Data||!state.table1Data.length)return;
   state.svgContent=generateSVG(state.table1Data,state.vizMode,state.ctrlMode,state.chartFormat);
-  state.rankingSvgContent=generateRankingSVG(state.table1Data);
+  state.rankingSvgContent=generateRankingSVG(state.table1Data,state.chartFormat);
   const $p=document.getElementById('graph-preview');
   $p.innerHTML=state.svgContent;
   if(state.rankingSvgContent){
@@ -343,8 +343,35 @@ function renderChart(){
 }
 
 /* ── Downloads ───────────────────────────────────────────── */
+function svgToPng(svgString, filename, scale){
+  if(!svgString){alert('먼저 그래프를 생성해주세요.');return;}
+  scale = scale || 3;
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgString,'image/svg+xml');
+  const svgEl = doc.documentElement;
+  const mmW = parseFloat(svgEl.getAttribute('width'))||210;
+  const mmH = parseFloat(svgEl.getAttribute('height'))||297;
+  const pxPerMm = 3.7795275591; // 96 DPI
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(mmW * pxPerMm * scale);
+  canvas.height = Math.round(mmH * pxPerMm * scale);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+  const svgB64 = btoa(unescape(encodeURIComponent(svgString)));
+  const img = new Image();
+  img.onload = () => {
+    ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    canvas.toBlob(blob => { if(blob) saveAs(blob,filename); else alert('PNG 변환 실패'); },'image/png');
+  };
+  img.onerror = e => { console.error(e); alert('PNG 변환 실패 (SVG 로드 오류).'); };
+  img.src = 'data:image/svg+xml;base64,'+svgB64;
+}
+
 document.getElementById('btn-download-svg').addEventListener('click',()=>{if(!state.svgContent)return;saveAs(new Blob([state.svgContent],{type:'image/svg+xml;charset=utf-8'}),`GPCR_chart_${state.q1Description.replace(/\s+/g,'_')||'output'}.svg`);});
+document.getElementById('btn-download-svg-png').addEventListener('click',()=>svgToPng(state.svgContent,`GPCR_chart_${state.q1Description.replace(/\s+/g,'_')||'output'}.png`));
 document.getElementById('btn-download-ranking-svg').addEventListener('click',()=>{if(!state.rankingSvgContent)return;saveAs(new Blob([state.rankingSvgContent],{type:'image/svg+xml;charset=utf-8'}),`GPCR_ranking_${state.q1Description.replace(/\s+/g,'_')||'output'}.svg`);});
+document.getElementById('btn-download-ranking-png').addEventListener('click',()=>svgToPng(state.rankingSvgContent,`GPCR_ranking_${state.q1Description.replace(/\s+/g,'_')||'output'}.png`));
 document.getElementById('btn-download-excel').addEventListener('click',downloadExcel);
 function downloadExcel(){const wb=XLSX.utils.book_new();state.sheetNames.forEach(n=>XLSX.utils.book_append_sheet(wb,state.workbook.Sheets[n],n));XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(buildER(state.table1Data,false)),'Table1_Analysis');XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(buildER(state.table1Data,true)),'Table2_Rounded');XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(buildRanking(state.table1Data)),'Ranking');XLSX.writeFile(wb,`GPCR_analysis_${state.q1Description.replace(/\s+/g,'_')||'output'}.xlsx`);}
 
